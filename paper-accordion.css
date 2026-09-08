@@ -466,10 +466,11 @@ html[data-static] .preel-frame.empty:not(.on) { display: none; }
 .about-facts { margin: 0; display: grid; gap: 14px; }
 .about-facts dt { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--fg); margin-bottom: 4px; }
 .about-facts dd { margin: 0; font-size: 14px; line-height: 1.5; color: var(--muted); }
-/* matches the case-study body's inline-link language (.pb-row p a.pb-link):
-   tint-accented, semibold, no underline, brightens to --fg on hover */
-.about-facts a { color: color-mix(in oklab, var(--tint) 80%, var(--fg)); font-weight: 600; text-decoration: none; transition: color .2s var(--ease); }
-.about-facts a:hover { color: var(--fg); }
+/* plain white (--fg) against the muted dd text -- semibold weight alone
+   marks it as a link, no accent color; underline is the hover affordance
+   since color has nowhere brighter to go */
+.about-facts a { color: var(--fg); font-weight: 600; text-decoration: none; }
+.about-facts a:hover { text-decoration: underline; text-underline-offset: 3px; }
 
 .contact-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: clamp(20px, 3vw, 48px); align-items: end; }
 .contact-line { margin: 0; font-family: var(--font-display); font-size: clamp(26px, 3.4vw, 42px); line-height: 1.1; color: var(--fg); text-wrap: balance; }
