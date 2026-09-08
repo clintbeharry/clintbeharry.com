@@ -374,14 +374,16 @@ html[data-static] .preel-frame.empty:not(.on) { display: none; }
 
 .nav-leaf, .contact-leaf { margin: 0; }
 /* the footer is a slim closing band: links and copyright on one line */
-.contact-leaf { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-top: 18.4px; padding-bottom: 18.4px; }
+.contact-leaf { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-top: 18.4px; padding-bottom: 18.4px;
+  /* symmetrical with the nav leaf above: same gutter both sides, not the
+     wider stripe-compensated --pad other leaves use on their left edge */
+  padding-left: clamp(20px, 2.8vw, 32px); padding-right: clamp(20px, 2.8vw, 32px); }
 .contact-leaf .contact-grid { display: contents; }
 .contact-leaf .contact-links { display: flex; align-items: center; gap: clamp(14px, 2vw, 26px); }
 .contact-leaf .contact-base { white-space: nowrap; margin: 0; }
 .nav-leaf { position: relative; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-top: 16px; padding-bottom: 16px;
-  /* the name sits closer to the bar than body copy does — without the dot the
-     full text indent left it stranded */
-  padding-left: calc(var(--stripe-x) + var(--stripe-w) + clamp(12px, 2.4vw, 24px)); }
+  /* same gutter both sides — symmetrical with the footer below */
+  padding-left: clamp(20px, 2.8vw, 32px); padding-right: clamp(20px, 2.8vw, 32px); }
 .nav-leaf .brand { display: inline-flex; align-items: center; font-family: var(--font-display); font-size: clamp(14px, 1.4vw + 6px, 17px); color: var(--fg); text-decoration: none; }
 .nav-leaf .topnav { display: flex; gap: clamp(14px, 2vw, 26px); }
 .nav-leaf .topnav a { font-size: 14px; color: var(--muted); text-decoration: none; transition: color .2s var(--ease); }
@@ -391,8 +393,10 @@ html[data-static] .preel-frame.empty:not(.on) { display: none; }
 .nav-leaf .topnav:not(.hero-links) a::after { content: ''; position: absolute; left: -9px; background: var(--fg); z-index: 2; pointer-events: none; }
 .nav-leaf .topnav:not(.hero-links) a::after { top: 2px; width: 1.5px; height: calc(100% + var(--nav-drop)); transform: scaleY(0); transform-origin: top center; transition: transform .2s var(--ease); }
 .nav-leaf .topnav:not(.hero-links) a:hover::after { transform: scaleY(1); }
-/* the contact set moved into the nav: keep the bordered-chip treatment there */
-.nav-leaf .topnav.hero-links { flex: none; flex-wrap: nowrap; white-space: nowrap; gap: 22px; padding-right: 14px; }
+/* the contact set moved into the nav: keep the bordered-chip treatment there.
+   No padding-right of its own — the leaf's own right padding is the whole
+   margin, same fix already applied at the phone breakpoint below. */
+.nav-leaf .topnav.hero-links { flex: none; flex-wrap: nowrap; white-space: nowrap; gap: 22px; }
 .nav-leaf .topnav.hero-links a { font-family: inherit; font-size: 14px; white-space: nowrap; letter-spacing: normal; padding: 0; border: 0; background: none; color: var(--muted); transition: color .2s var(--ease); }
 .nav-leaf .topnav.hero-links a:hover { background: none; border: 0; color: var(--fg); }
 .nav-leaf .topnav.hero-links a::after { display: none; }
@@ -415,7 +419,11 @@ html[data-static] .preel-frame.empty:not(.on) { display: none; }
 /* hero keywords sit in a bevel cut from the same light as the half folds: the
    upper facet takes the crease's dimmed paper, the lower one its lit paper */
 .hero-line .kw { position: relative; display: inline-block; white-space: nowrap; border-style: solid; border-width: 0.11em; padding: calc(0.03em + 1px) 0.2em 0.06em; color: var(--fg);
-  --tint-shade: color-mix(in oklab, var(--paper-dim) 86%, oklch(0.13 0.015 300));
+  /* matches the half fold's own shadow (crease-trail's upper plane, between
+     the nav and the hero leaf) exactly — that plane renders at --paper-dim
+     with no further darkening, so the shaded facet doesn't need the extra
+     14%-toward-black mix that made it read darker than that reference. */
+  --tint-shade: var(--paper-dim);
   --tint-lit: color-mix(in oklab, var(--paper) 93%, oklch(0.97 0.01 300));
   background: var(--paper);
   border-top-color: var(--tint-shade);
