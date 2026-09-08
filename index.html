@@ -42,5 +42,47 @@
   <script src="video-slot.js"></script>
   <script src="data.js"></script>
   <script src="portfolio-app.min.js"></script>
+  <script>
+  // TEMPORARY diagnostic overlay for the Wonderscope Solution spacing report
+  // (round 2: Android/narrow-window vs iPhone). Only activates on
+  // ?debug-gap=1. Remove once the cause is found.
+  if (location.search.indexOf('debug-gap=1') !== -1) {
+    var panel = document.createElement('div');
+    panel.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:99999;background:#000;color:#0f0;font:10px/1.35 monospace;padding:8px;max-height:50vh;overflow:auto;white-space:pre-wrap;';
+    document.body.appendChild(panel);
+    function update() {
+      var pnl = document.querySelector('.pnl[id="wonderscope"]');
+      if (!pnl) { panel.textContent = 'no wonderscope pnl found'; return; }
+      var rows = pnl.querySelectorAll('.pb-row');
+      var lines = [];
+      rows.forEach(function (row) {
+        var numEl = row.querySelector('.pb-num');
+        var label = numEl ? numEl.textContent.trim() : '?';
+        var media = row.querySelector('.pb-media, .preel, .pb-img');
+        var copy = row.querySelector('.pb-copy');
+        if (!media || !copy) { lines.push(label + ': missing'); return; }
+        var mRect = media.getBoundingClientRect();
+        var cRect = copy.getBoundingClientRect();
+        var cs = getComputedStyle(media);
+        var vids = media.querySelectorAll('video');
+        var vidInfo = Array.prototype.map.call(vids, function (v) {
+          return 'video ' + v.videoWidth + 'x' + v.videoHeight + ' rect=' + Math.round(v.getBoundingClientRect().width) + 'x' + Math.round(v.getBoundingClientRect().height);
+        }).join(' | ');
+        lines.push(label + '  class=' + media.className +
+          '\n  kmax=' + cs.getPropertyValue('--kmax') +
+          '  marginBottom=' + cs.marginBottom +
+          '  mediaHeight=' + Math.round(mRect.height) +
+          '  GAP=' + (Math.round((cRect.top - mRect.bottom) * 10) / 10) +
+          (vidInfo ? '\n  ' + vidInfo : ''));
+      });
+      panel.textContent = 'DEBUG GAP2 ' + new Date().toLocaleTimeString() +
+        '  w=' + window.innerWidth + ' dpr=' + window.devicePixelRatio +
+        '\n  UA=' + navigator.userAgent +
+        '\n\n' + lines.join('\n\n');
+    }
+    setInterval(update, 500);
+    update();
+  }
+  </script>
 </body>
 </html>
