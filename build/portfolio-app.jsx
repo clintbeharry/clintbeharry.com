@@ -24,7 +24,7 @@ function TweakRadio() { return null; }
 const { useState, useEffect, useRef, useLayoutEffect } = React;
 
 const NAME = "Clint Beharry";
-const EMAIL = "clint@beharry.design";
+const EMAIL = "clintbeharry@gmail.com";
 /* the palette walks one direction — pink → red → orange → yellow — so the bar
    and the papers behind it read as one stepped gradient down the sheet */
 const TINTS = ["oklch(0.6 0.13 350)", "oklch(0.633 0.127 20)", "oklch(0.667 0.123 50)", "oklch(0.7 0.12 80)"];
@@ -571,8 +571,8 @@ function PaperWork() {
             <a href="#top" className="brand">{NAME}</a>
             <nav className="topnav hero-links">
               <a href={"mailto:" + EMAIL}>Email</a>
-              <a href="https://www.linkedin.com/" target="_blank" rel="noopener">LinkedIn</a>
-              <a href="https://read.cv/" target="_blank" rel="noopener">Resume</a>
+              <a href="https://www.linkedin.com/in/clint-beharry-2a9384b2/" target="_blank" rel="noopener">LinkedIn</a>
+              <a href="/clintbeharry-resume.pdf" target="_blank" rel="noopener">Resume</a>
             </nav>
           </header>
           <div className="crease crease-trail" aria-hidden="true"><i className="crease-bar" /></div>
@@ -619,8 +619,8 @@ function PaperWork() {
             <div className="contact-grid">
               <div className="contact-links">
                 <a href={"mailto:" + EMAIL}>Email</a>
-                <a href="https://www.linkedin.com/" target="_blank" rel="noopener">LinkedIn</a>
-                <a href="https://read.cv/" target="_blank" rel="noopener">Resume</a>
+                <a href="https://www.linkedin.com/in/clint-beharry-2a9384b2/" target="_blank" rel="noopener">LinkedIn</a>
+                <a href="/clintbeharry-resume.pdf" target="_blank" rel="noopener">Resume</a>
               </div>
             </div>
             <div className="contact-base mono">© {new Date().getFullYear()} <span className="cb-name">{NAME}</span></div>
