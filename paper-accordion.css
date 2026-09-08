@@ -511,7 +511,13 @@ html[data-static] .preel-frame.empty:not(.on) { display: none; }
 .pb-row > .preel, .pb-row > .pb-img, .pb-row > div { margin-top: 30px; }
 /* a row carrying a second frame under its deck: both share the row's lead-in
    space, then sit a card-gap apart */
-.pb-media { display: grid; gap: 47px; }
+/* flex, not grid: a grid item's auto-sized track can go stale in Safari when
+   the item's aspect-ratio is set inline by JS after layout (exactly what
+   happens here once a video's real dimensions replace the 16:9 CSS default)
+   -- Safari then fails to grow the container to match, and the last frame
+   visually overflows past .pb-media's own bottom edge. Flex re-sizes on that
+   change reliably in every engine tested. */
+.pb-media { display: flex; flex-direction: column; gap: 47px; }
 .pb-media > .preel { margin-top: 0; }
 .pb-media > .pb-shots:not(:last-child) { margin-bottom: calc(var(--kmax, 0) * 5px); }
 .pb-row p + p { margin-top: .85em; }
