@@ -305,8 +305,14 @@
     // .frame img (clipped) and .spill (unclipped ghost + handles) share the
     // same left/top/width/height in frame-%, computed by _applyView(), so the
     // inside-mask crop and the outside-mask spill stay pixel-aligned.
+    // touch-action:none only serves the reframe pan/zoom gesture (mouse-drag
+    // and wheel-zoom on desktop; touch input never drives reframe at all —
+    // see the pointerdown handler's `data-reframe` gate). In production
+    // (STATIC) reframe can never activate, so leaving it 'none' would just
+    // block the browser's native touch-scroll over every image for no
+    // reason, which is exactly what breaks a finger-swipe scroll on mobile.
     '.frame img{position:absolute;max-width:none;transform:translate(-50%,-50%);' +
-    '  -webkit-user-drag:none;user-select:none;touch-action:none}' +
+    '  -webkit-user-drag:none;user-select:none;touch-action:' + (STATIC ? 'auto' : 'none') + '}' +
     // Reframe mode (double-click): the full image spills past the mask. The
     // spill layer is sized to the IMAGE bounds so its corners are where the
     // resize handles belong. The ghost <img> inside is translucent; the real
