@@ -66,13 +66,26 @@
         var cs = getComputedStyle(media);
         var vids = media.querySelectorAll('video');
         var vidInfo = Array.prototype.map.call(vids, function (v) {
-          return 'video ' + v.videoWidth + 'x' + v.videoHeight + ' rect=' + Math.round(v.getBoundingClientRect().width) + 'x' + Math.round(v.getBoundingClientRect().height);
-        }).join(' | ');
+          var vr = v.getBoundingClientRect();
+          var wrap = v.closest('.preel-frame') || v.parentElement;
+          var wr = wrap.getBoundingClientRect();
+          return 'video ' + v.videoWidth + 'x' + v.videoHeight + ' rect=' + Math.round(vr.width) + 'x' + Math.round(vr.height) +
+            ' videoBottom=' + Math.round(vr.bottom) + ' frameBottom=' + Math.round(wr.bottom) +
+            ' GAP-video-to-copy=' + (Math.round((cRect.top - vr.bottom) * 10) / 10) +
+            ' GAP-frame-to-copy=' + (Math.round((cRect.top - wr.bottom) * 10) / 10);
+        }).join('\n  ');
+        var children = Array.prototype.map.call(media.children, function (c, i) {
+          var r = c.getBoundingClientRect();
+          return '    child[' + i + '] ' + c.className + ' bottom=' + Math.round(r.bottom);
+        }).join('\n');
         lines.push(label + '  class=' + media.className +
           '\n  kmax=' + cs.getPropertyValue('--kmax') +
           '  marginBottom=' + cs.marginBottom +
           '  mediaHeight=' + Math.round(mRect.height) +
-          '  GAP=' + (Math.round((cRect.top - mRect.bottom) * 10) / 10) +
+          '  wrapperBottom=' + Math.round(mRect.bottom) +
+          '  copyTop=' + Math.round(cRect.top) +
+          '  GAP(wrapper-to-copy)=' + (Math.round((cRect.top - mRect.bottom) * 10) / 10) +
+          (children ? '\n' + children : '') +
           (vidInfo ? '\n  ' + vidInfo : ''));
       });
       panel.textContent = 'DEBUG GAP2 ' + new Date().toLocaleTimeString() +
