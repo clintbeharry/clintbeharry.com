@@ -188,7 +188,7 @@
   position: relative; z-index: 3;
   display: grid; grid-template-columns: minmax(200px, 32%) 1fr;
   gap: clamp(26px, 3.2vw, 40px) clamp(38px, 2.6vw + 20px, 54px); align-items: center;
-  padding: calc(clamp(30px, 3.6vw, 44px) + 10px) var(--pad-r) calc(clamp(30px, 3.6vw, 44px) + 10px) var(--pad);
+  padding: calc(clamp(30px, 3.6vw, 44px) + 20px) var(--pad-r) calc(clamp(30px, 3.6vw, 44px) + 20px) var(--pad);
   background: var(--paper);
   background-image: var(--printed);
 }
@@ -557,7 +557,7 @@ html[data-static] .preel-frame.empty:not(.on) { display: none; }
      noticeably taller and busier than a single deck — the same numeric gap
      that reads fine under a lone deck reads tight here, so it gets a bit
      more room on top of the usual stack-peek compensation */
-  .pb-row > .pb-media { margin-bottom: calc(var(--kmax, 0) * 5px + 18px); }
+  .pb-row > .pb-media { margin-bottom: calc(var(--kmax, 0) * 5px + 13px); }
   .sheet { perspective: 900px; }
 }
 /* phones: the sheet keeps its folds, but the printed bar sits closer to the edge,
@@ -583,7 +583,7 @@ html[data-static] .preel-frame.empty:not(.on) { display: none; }
   /* the year alone carries the notice here — the name is already in the nav */
   .contact-leaf .contact-base { white-space: nowrap; font-size: 10px; }
   .contact-leaf .cb-name { display: none; }
-  .pnl-face { padding: 30px var(--pad-r) 30px var(--pad); gap: 26px 20px; }
+  .pnl-face { padding: 50px var(--pad-r) 50px var(--pad); gap: 26px 20px; }
   /* image and copy share one column edge — both run the full text measure */
   .pnl-face .preel { max-width: none; }
   .pnl-inner { padding: 0 var(--pad-r) 42px var(--pad); }
