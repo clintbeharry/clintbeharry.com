@@ -562,14 +562,14 @@ html[data-static] .preel-frame.empty:not(.on) { display: none; }
   /* the nav and footer stay full-bleed — they frame the inset work */
   .nav-leaf, .contact-leaf { margin: 0; }
   .hero-leaf { padding-left: var(--pad); padding-right: var(--pad-r); padding-top: 46px; padding-bottom: 40px; }
-  .nav-leaf { flex-wrap: nowrap; gap: 8px 12px; padding: 14px var(--pad-r) 14px calc(var(--pad) * .72); }
+  .nav-leaf { flex-wrap: nowrap; gap: 8px 12px; padding: 14px var(--pad-r) 14px var(--pad-r); }
   .nav-leaf .brand { min-width: 0; white-space: nowrap; }
   .nav-leaf .topnav { gap: 16px; }
   /* the leaf's own right padding is the whole margin here — the links row adds
      none of its own, or Resume sits 44px off the edge */
   .nav-leaf .topnav.hero-links { gap: 12px; padding-right: 0; }
   .nav-leaf .topnav.hero-links a { font-size: 11.5px; }  /* links and copyright hold one line: the shorter labels and a tighter gap fit */
-  .contact-leaf { flex-wrap: nowrap; align-items: center; gap: 10px; padding: 18px var(--pad-r) 18px var(--pad); }
+  .contact-leaf { flex-wrap: nowrap; align-items: center; gap: 10px; padding: 18px var(--pad-r) 18px var(--pad-r); }
   .contact-leaf .contact-links { flex-wrap: nowrap; gap: 14px; }
   .contact-leaf .contact-links a { font-size: 13px; }
   /* the year alone carries the notice here — the name is already in the nav */
