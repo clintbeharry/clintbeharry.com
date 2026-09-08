@@ -566,7 +566,7 @@ html[data-static] .preel-frame.empty:not(.on) { display: none; }
      Solution row) carries the same --kmax on itself so it gets the same
      compensation as a bare deck. */
   .pb-row > .pb-shots { margin-bottom: calc(var(--kmax, 0) * 5px); }
-  .pb-row > .pb-media { margin-bottom: calc(var(--kmax, 0) * 5px - 5px); }
+  .pb-row > .pb-media { margin-bottom: calc(var(--kmax, 0) * 5px - 10px); }
   .sheet { perspective: 900px; }
 }
 /* phones: the sheet keeps its folds, but the printed bar sits closer to the edge,
