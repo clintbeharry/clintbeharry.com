@@ -1,4 +1,10 @@
 /* global React, ReactDOM, PROJECTS */
+// Production (data-static on <html>): image-slot's own click affordances
+// (browse-to-upload, hover controls) are already disabled, so there is
+// nothing left on an image/video worth swallowing a click for — see the
+// Reel component's onClick below.
+const STATIC = typeof document !== "undefined" && document.documentElement.hasAttribute("data-static");
+
 /* Minimal stand-in for the design-tool's tweaks-panel.jsx. The floating
    panel only ever opens on a postMessage from a parent design-tool host
    frame (__activate_edit_mode) — on the standalone public site there is no
@@ -264,7 +270,7 @@ function Reel({ slotId, count = REEL_SLOTS, hold = REEL_HOLD, className = "", hi
   return (
     <div className={"preel " + className + (dragging ? " dragging" : "")} ref={box} {...drag}
     style={{ aspectRatio: frameRatio || undefined, "--kmax": Math.min(Math.max(filled.length - 1, 0), 2) }}
-    onClick={(e2) => e2.stopPropagation()}>
+    onClick={(e2) => { if (!STATIC) e2.stopPropagation(); }}>
       {Array.from({ length: total }).map((_, n) => {
         const empty = !isFilled(n);
         /* nothing dropped yet: slot 0 is the full-size drop target */
