@@ -548,8 +548,11 @@ html[data-static] .preel-frame.empty:not(.on) { display: none; }
   .pb-row > .pb-media { margin-top: 30px; }
   .pb-media { gap: 26px; }
   /* stacked decks hang below their front card: the copy measures from the
-     BACKMOST card's edge so the gap looks the same as beside a flat image */
-  .pb-row > .pb-shots { margin-bottom: calc(var(--kmax, 0) * 5px); }
+     BACKMOST card's edge so the gap looks the same as beside a flat image.
+     .pb-media (a deck plus a standalone extra video/image, e.g. Wonderscope's
+     Solution row) carries the same --kmax on itself so it gets the same
+     compensation as a bare deck. */
+  .pb-row > .pb-shots, .pb-row > .pb-media { margin-bottom: calc(var(--kmax, 0) * 5px); }
   .sheet { perspective: 900px; }
 }
 /* phones: the sheet keeps its folds, but the printed bar sits closer to the edge,

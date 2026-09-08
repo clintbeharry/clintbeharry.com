@@ -188,8 +188,16 @@ const EXTRA_SHOTS = { wonderscope: { solution: 1 } };
 
 function Shots({ uid, sectionKey, max, ix }) {
   const extra = (EXTRA_SHOTS[uid] || {})[sectionKey] || 0;
+  /* the deck's own --kmax (set on its .preel, a child of .pb-media here rather
+     than a direct child of .pb-row) can't reach the .pb-row > .pb-shots
+     margin-bottom rule that gives a stacked deck's copy the same gap as a
+     flat image — mirror the same filled-count math onto the wrapper itself
+     so .pb-row > .pb-media can carry the matching compensation. */
+  const mediaBox = useRef(null);
+  const filled = useFilled(mediaBox);
+  const kmax = Math.min(Math.max(filled.length - 1, 0), 2);
   if (extra) return (
-    <div className="pb-media">
+    <div className="pb-media" ref={mediaBox} style={{ "--kmax": kmax }}>
       <ShotsReel uid={uid} sectionKey={sectionKey} max={max} ix={ix} />
       {Array.from({ length: extra }, (_, x) =>
       <Reel key={"x" + x} slotId={(n) => uid + "-" + sectionKey + "-extra" + (x || "") + (n ? "-" + n : "")}
