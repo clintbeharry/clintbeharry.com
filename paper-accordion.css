@@ -552,7 +552,12 @@ html[data-static] .preel-frame.empty:not(.on) { display: none; }
      .pb-media (a deck plus a standalone extra video/image, e.g. Wonderscope's
      Solution row) carries the same --kmax on itself so it gets the same
      compensation as a bare deck. */
-  .pb-row > .pb-shots, .pb-row > .pb-media { margin-bottom: calc(var(--kmax, 0) * 5px); }
+  .pb-row > .pb-shots { margin-bottom: calc(var(--kmax, 0) * 5px); }
+  /* a deck plus its own extra video/image (Wonderscope's Solution row) reads
+     noticeably taller and busier than a single deck — the same numeric gap
+     that reads fine under a lone deck reads tight here, so it gets a bit
+     more room on top of the usual stack-peek compensation */
+  .pb-row > .pb-media { margin-bottom: calc(var(--kmax, 0) * 5px + 18px); }
   .sheet { perspective: 900px; }
 }
 /* phones: the sheet keeps its folds, but the printed bar sits closer to the edge,
