@@ -1,0 +1,678 @@
+/* ============================================================
+   One sheet of paper. The summary faces are flat and forward;
+   each case study is folded away edge-on BETWEEN them.
+   No labels — the fold says it.
+   ============================================================ */
+/* the sheet runs edge to edge vertically: no gap above the nav leaf or below
+   the contact leaf */
+/* the ground print hangs 240px past each viewport edge; clip it here rather than on
+   html/body so the root's compositing is left alone */
+.paper-section { padding: 0; overflow-x: clip; }
+
+@property --chamfer { syntax: "<length>"; inherits: true; initial-value: 10px; }
+@property --unfold { syntax: "<number>"; inherits: true; initial-value: 0; }
+@property --press { syntax: "<number>"; inherits: true; initial-value: 0; }
+@property --fade { syntax: "<number>"; inherits: true; initial-value: 0; }
+
+.sheet {
+  --gusset: 16px;     /* thickness of the folded band between faces */
+  --chamfer: 8px;     /* how far the band's ends taper into the crease */
+  --unfold: 0;        /* 0 = folded band, 1 = flat sheet */
+  --press: 0;         /* hover: the crease pinches deeper without moving anything */
+  --swell: 26px;      /* how far each plane travels down as the fold opens flat */
+  --d: 0ms;
+  --shade: 1;
+  position: relative;
+  /* a shallow cast shadow lifts the sheet off the print behind it */
+  box-shadow: 0 2px 3px oklch(0.1 0.01 300 / .16), 0 14px 34px -18px oklch(0.08 0.01 300 / .5);
+  perspective: 1500px;
+  perspective-origin: 50% 50%;
+  cursor: pointer;
+}
+/* open: the chamfered planes fade out and the band closes to a hairline, so the
+   expanded case studies connect paper-to-paper */
+/* these live on the creases, not the sheet: transitioning a registered custom
+   property on the sheet re-resolves style for every element inside it each
+   frame — scoping them here keeps the fold cheap */
+.sheet.open .pleats > .pnl > .crease { --gusset: 0px; --chamfer: 0px; --unfold: 1; --fade: 1; }
+.sheet { --fade: 0; }
+/* hover pinches every crease tighter: the valley plane grows and darkens while
+   the returning plane narrows — a more acute fold, zero layout shift.
+   Tweakables: --press-split (how far the crease line drops) and the 30% below. */
+.sheet { --press-split: 18%; }
+/* only the case studies fold, so only their creases pinch on hover. Gated to real
+   pointers: on touch, :hover sticks after the finger lifts — there the pinch rides
+   on :active instead, which releases with the tap */
+@media (hover: hover) and (pointer: fine) {
+  .sheet:not(.open) .pleats:hover > .pnl > .crease { --press: 1; }
+}
+@media (hover: none) {
+  .sheet:not(.open) .pleats:active > .pnl > .crease { --press: 1; }
+}
+
+/* —— the fold: two flat planes of the same paper, chamfered at the ends
+   so the band reads as material receding into the crease —— */
+.crease {
+  /* folded, the chamfer notches cut through to the page and the two chamfered
+     planes below do the drawing; unfolded, those planes fade out and all that
+     is left is a hairline between the expanded case studies */
+  /* the travelling planes must ride over the face below while they open out */
+  position: relative; z-index: 2; height: max(var(--gusset), calc(var(--unfold) * 1px)); overflow: visible;
+  /* the planes overlap their neighbours by a pixel: panel heights land on
+     fractional pixels, and without the overlap the rounding leaves a hairline
+     of page background at every fold */
+  margin: -0.2px 0;
+  background-color: color-mix(in oklab, var(--paper) calc(var(--unfold) * 100%), transparent);
+  background-image:
+    linear-gradient(oklch(1 0 0 / calc(var(--unfold) * .07)) 0 0),
+    linear-gradient(180deg, transparent 0 50%, transparent 50% 100%);
+  transition: height .46s cubic-bezier(.22,.86,.2,1) var(--d),
+              --chamfer .46s cubic-bezier(.22,.86,.2,1) var(--d),
+              --unfold .46s cubic-bezier(.22,.86,.2,1) var(--d),
+              --press .16s var(--ease) var(--d),
+              --fade .14s linear var(--d);
+}
+/* opening, the planes keep full opacity for most of the travel and only give way
+   once they have landed flat; closing, they reappear as the crease reforms */
+.sheet.open .crease { transition: height .46s cubic-bezier(.22,.86,.2,1) var(--d),
+              --chamfer .46s cubic-bezier(.22,.86,.2,1) var(--d),
+              --unfold .46s cubic-bezier(.22,.86,.2,1) var(--d),
+              --fade .14s linear calc(var(--d) + .34s); }
+/* upper plane — tips away from the light, ends narrowing toward the fold */
+.crease::before {
+  content: ""; position: absolute; left: 0; right: 0; top: -0.2px;
+  /* the plane holds its full opacity while it travels, then fades at the very
+     end — the band reads as unfolding flat, not as fading out in place */
+  opacity: calc(1 - var(--fade));
+  /* the upper plane runs 0.6px past the midline: closed, the crease box itself is
+     transparent, so the two planes must overlap enough to survive fractional
+     panel heights or the page shows through at the fold line */
+  height: calc(50% + 0.6px + var(--press) * var(--press-split) + var(--unfold) * var(--swell));
+  background: color-mix(in oklab, var(--paper) calc(var(--unfold) * 100%), color-mix(in oklab, oklch(0.13 0.015 300) calc(var(--press) * 4%), var(--paper-dim)));
+  clip-path: polygon(0 0, 100% 0, calc(100% - var(--chamfer)) 100%, var(--chamfer) 100%);
+}
+/* lower plane — opens back out toward the next face */
+.crease::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: auto;
+  opacity: calc(1 - var(--fade));
+  /* travels down by a full swell and grows by another, so it sweeps out of the
+     crease and lands flat against the face below */
+  top: calc(50% - 0.2px + var(--press) * var(--press-split) + var(--unfold) * var(--swell));
+  /* hover only drops the crease line: the plane's bottom edge stays pinned to the
+     face below, so it narrows instead of sliding past it */
+  height: calc(50% + 0.4px - var(--press) * var(--press-split) + var(--unfold) * var(--swell));
+  /* the lower plane already belongs to the case study below, so it takes that
+     panel's paper */
+  /* it tilts toward the light: a slightly lighter paper than the face it lands on,
+     so the band reads as opening out of the crease */
+  background: color-mix(in oklab, var(--paper-next, var(--paper)) calc(97% + var(--unfold) * 3%), oklch(0.97 0.01 300));
+  clip-path: polygon(var(--chamfer) 0, calc(100% - var(--chamfer)) 0, 100% 100%, 0 100%);
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / .07);
+}
+
+/* the fold into the work has no valley above it — the hero is already open, so
+   only the band that opens back out toward the first case study is drawn */
+/* the folds that meet a static leaf never open — they stay creased at a fixed
+   half-band, so the inset leaves keep their edges in both states */
+.sheet .crease-lead, .sheet .crease-trail, .sheet .pleats > .pnl:last-child > .crease { --chamfer: 8px; --unfold: 0; --press: 0; --fade: 0; height: 8px; }
+/* the half folds: only one plane, so the fill behind it matches that plane */
+.crease-lead { background-image: linear-gradient(oklch(1 0 0 / calc(var(--unfold) * .07)) 0 0); }
+.crease-trail, .pleats > .pnl:last-child > .crease { background-image: linear-gradient(oklch(1 0 0 / calc(var(--unfold) * .07)) 0 0); }
+.crease-lead::before { display: none; }
+.crease-lead::after { top: -0.2px; height: calc(100% + 0.4px); }
+/* and the fold under the nav is only the valley half — the hero opens out of it */
+.crease-trail::after { display: none; }
+.crease-trail::before { height: calc(100% + 0.4px); }
+
+/* the last case study folds into an already-open leaf, so its crease keeps only
+   the valley half */
+.pleats > .pnl:last-child > .crease { height: 8px; }
+.pleats > .pnl:last-child > .crease::after { display: none; }
+.pleats > .pnl:last-child > .crease::before { height: calc(100% + 0.4px); }
+
+
+/* the printed bar follows the paper: it slants in and out across every fold so
+   the inset leaves and the full-width ones stay connected by one continuous bar */
+.crease-bar { position: absolute; top: -0.2px; bottom: auto; height: calc(100% + 0.4px + var(--unfold) * var(--swell) * 2); left: var(--stripe-x); width: calc(var(--stripe-w) + var(--chamfer)); z-index: 1;
+  opacity: calc(1 - var(--fade));
+  /* the bar's kink — and the handover from this study's ink to the next — both
+     sit exactly where the crease line does, so a hover pinch re-angles and
+     re-splits the printed bar with the planes instead of holding 45% / 45° */
+  --bar-split: calc(50% + var(--press) * var(--press-split));
+  background: linear-gradient(180deg, color-mix(in oklab, var(--ink) calc(var(--unfold) * 100%), var(--ink-dim)) 0 var(--bar-split), var(--tint-next, var(--ink)) var(--bar-split) 100%);
+  clip-path: polygon(0 0, var(--stripe-w) 0, calc(var(--chamfer) + var(--stripe-w)) var(--bar-split), var(--stripe-w) 100%, 0 100%, var(--chamfer) var(--bar-split)); }
+/* half folds carry a single slant */
+.crease-lead .crease-bar { background: var(--ink); clip-path: polygon(var(--chamfer) 0, calc(var(--chamfer) + var(--stripe-w)) 0, var(--stripe-w) 100%, 0 100%); }
+.crease-trail .crease-bar, .pleats > .pnl:last-child > .crease .crease-bar { background: color-mix(in oklab, var(--ink) calc(var(--unfold) * 100%), var(--ink-dim)); clip-path: polygon(0 0, var(--stripe-w) 0, calc(var(--chamfer) + var(--stripe-w)) 100%, var(--chamfer) 100%); }
+
+/* the color band lives ON the paper: one step per case study, stacking into
+   the same five-color mark as the header */
+
+.pleats { display: flex; flex-direction: column; }
+
+/* —— one section of the sheet: nav, hero, pillars, each case study, about,
+   contact — all printed on the same paper, all separated by real creases —— */
+.leaf, .sheet {
+  --tint: oklch(0.68 0.13 55);
+  /* no background here: the chamfered notches at each fold must show the page
+     behind them. Every layer that can be exposed mid-stretch paints its own
+     paper (face, body, clip, inner). */
+  --stripe-x: 0px;   /* the color band rides the paper's left edge */
+  --stripe-w: 4px;
+  --gutter: clamp(30px, 3.4vw, 42px);
+  --pad: calc(var(--stripe-x) + var(--stripe-w) + var(--gutter));
+  /* the right margin matches the left gap from the color bar to the content */
+  --pad-r: var(--gutter);
+  --paper: color-mix(in oklab, var(--tint) 12%, var(--surface));
+  --paper-dim: color-mix(in oklab, var(--paper) 94%, oklch(0.13 0.015 300));
+  --ink: var(--tint);
+  --ink-dim: color-mix(in oklab, var(--tint) 94%, oklch(0.13 0.015 300));
+  --printed: linear-gradient(90deg, transparent 0 var(--stripe-x), var(--ink) var(--stripe-x) calc(var(--stripe-x) + var(--stripe-w)), transparent calc(var(--stripe-x) + var(--stripe-w)));
+  --printed-dim: linear-gradient(90deg, transparent 0 var(--stripe-x), var(--ink-dim) var(--stripe-x) calc(var(--stripe-x) + var(--stripe-w)), transparent calc(var(--stripe-x) + var(--stripe-w)));
+}
+.leaf { position: relative; }
+.leaf-static { isolation: isolate; }
+/* the case-study panels deliberately do NOT isolate: the creases (z 2) and the
+   faces (z 3) then share one stacking context, so a travelling fold plane rides
+   over the paper of the panel below but never over its face content */
+.pleats > .pnl { z-index: auto; }
+/* the leaves between the case studies print a quiet neutral stripe; only the
+   hero carries the full five-color mark. They also sit on a flatter, lighter
+   paper than the case studies — already open, nothing to click. */
+.leaf-static, .sheet { --ink: color-mix(in oklab, var(--fg) 26%, transparent); --ink-dim: color-mix(in oklab, var(--fg) 20%, transparent); --paper: color-mix(in oklab, var(--surface) 94%, oklch(0.95 0.003 300)); }
+
+/* —— the flat, forward-facing summary —— */
+/* the always-visible summary never participates in the fold — it stays flat,
+   opaque, and above the unfolding contents */
+.pnl-face {
+  position: relative; z-index: 3;
+  display: grid; grid-template-columns: minmax(200px, 32%) 1fr;
+  gap: clamp(26px, 3.2vw, 40px) clamp(38px, 2.6vw + 20px, 54px); align-items: center;
+  padding: clamp(30px, 3.6vw, 44px) var(--pad-r) clamp(30px, 3.6vw, 44px) var(--pad);
+  background: var(--paper);
+  background-image: var(--printed);
+}
+.pnl-face:focus-visible { outline: 2px solid var(--tint); outline-offset: -4px; }
+/* expanded panels breathe: the face gains 30px above its image while the fold
+   animates, and gives it back on the way closed, so the collapsed stack stays tight */
+.pnl-face { transition: padding .46s cubic-bezier(.22,.86,.2,1); }
+.pnl.open > .pnl-face { padding-top: calc(clamp(30px, 3.6vw, 44px) + 40px); }
+/* the leaf just above an open one matches it, so the crease between them sits in
+   the same breathing room — from the face when that leaf is closed, from the
+   body's own tail when it is open (that tail sits outside the clip, so the fold
+   measurement is untouched) */
+.pnl:has(+ .pnl.open) > .pnl-face { padding-bottom: calc(clamp(30px, 3.6vw, 44px) + 40px); }
+.pnl-body { transition: padding .46s cubic-bezier(.22,.86,.2,1); }
+.pnl.open > .pnl-body { padding-bottom: 40px; }
+/* (no extra crease line on the face — the fold band alone marks the crease) */
+/* Amethysta ships one weight — pin the display face to 400 so nothing gets a
+   synthesised bold from default heading weights */
+.pnl-title, .hero-line, .contact-line, .nav-leaf .brand, .about-body .lead-em { font-weight: 400; }
+.pnl-copy { display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+.pnl-title { margin: 0; font-family: var(--font-display); font-size: 30px; line-height: 1.06; color: var(--fg); text-wrap: balance; }
+.pnl-role { position: relative; margin: 5px 0 0; padding-left: 26px; font-size: 11px; letter-spacing: 0.06em; color: var(--muted); }
+.pnl-role .pin, .hero-loc .pin { position: absolute; left: 4px; top: 3px; width: 9px; height: 12px; }
+.pnl-role .pin path, .hero-loc .pin path { fill: none; stroke: currentColor; stroke-width: 1.3; }
+.pnl-role .pin circle, .hero-loc .pin circle { fill: currentColor; }
+.hero-loc { position: relative; display: inline-block; padding-left: 26px; }
+.pnl-role .pin path { fill: none; stroke: currentColor; stroke-width: 1.3; }
+.pnl-role .pin circle { fill: currentColor; }
+.pnl-desc { margin: 3px 0 0; color: var(--muted); font-size: 15px; line-height: 1.5; max-width: 68ch; text-wrap: pretty; }
+.pnl-impact { display: inline-flex; align-items: flex-start; margin-top: 3px; gap: 10px; font-size: 13px; line-height: 1.5; font-weight: 600; color: color-mix(in oklab, var(--tint) 80%, var(--fg)); }
+/* the impact mark: a dot with two rings rippling out from it */
+/* the mark centres on the first line of text, so a wrapped line stays top-aligned */
+.pnl-impact .rule { flex: none; width: 16px; height: 16px; overflow: visible; margin-top: calc((1.5em - 16px) / 2); }
+.pnl-impact .rule .mk-dot { fill: currentColor; }
+.pnl-impact .rule .mk-ring { fill: none; stroke: currentColor; stroke-width: 1; vector-effect: non-scaling-stroke; will-change: transform, opacity; opacity: 0; transform: scale(.25); animation: ripple-out 4s linear infinite both; }
+.pnl-impact .rule .mk-ring2 { animation-delay: -2s; }
+/* paused unless the mark is on screen (data-live is set by an observer): an
+   infinite animation repainting off-screen costs the whole page every frame */
+.pnl-impact .rule .mk-ring { animation-play-state: paused; }
+.pnl-impact[data-live] .rule .mk-ring { animation-play-state: running; }
+@keyframes ripple-out { 0% { transform: scale(.25); opacity: 0; } 12% { opacity: .6; } 100% { transform: scale(1); opacity: 0; } }
+
+/* —— face reel —— */
+/* the face is identical folded and unfolded — same padding, same image size,
+   same text position — so nothing shifts as the sheet opens.
+   frames stack in place and cross-fade; a single gif simply sits there. */
+.preel { position: relative; aspect-ratio: 4/3; --letterbox: color-mix(in oklab, var(--tint) 14%, color-mix(in oklab, black 8%, var(--bg))); background: none; transition: aspect-ratio .5s var(--ease); }
+/* the reel reads as a deck: the live image is the card on top, the rest step
+   back down-left so every corner travels the same 45° line as the folds and
+   chevrons. the BACKMOST card is the anchor — its bottom-left corner sits on
+   the column's edge and the deck builds up-right from there. no scaling and no
+   perspective — a flat, graphic stack. */
+.preel-frame.card { --step: 5px;
+  /* the deck's own axis: the cover anchors on the BACKMOST card, so depth walks
+     the stack forward; --fx/--fy is wherever the top card sits in that scheme */
+  --sx: calc((var(--kmax) - var(--k)) * var(--step));
+  --sy: calc((var(--kmax) - var(--k)) * var(--step) * -1);
+  --fx: calc(var(--kmax) * var(--step));
+  --fy: calc(var(--kmax) * var(--step) * -1);
+  opacity: calc(3 - var(--k)); background: var(--letterbox);
+  transform: translate(var(--sx), var(--sy));
+  box-shadow: 0 0 0 2px var(--tint);
+  z-index: calc(9 - var(--k));
+  transition: transform .5s var(--ease), opacity .5s var(--ease), mask-position .5s var(--ease); }
+.preel-frame.card.on { pointer-events: auto; }
+
+/* —— slide transitions (tweakable) ——
+   every mode moves the card that just left the top; the deck underneath always
+   steps forward one notch, so the modes differ only in that card's exit. */
+[data-reel-fx="deal"] .preel-frame.card.leaving,
+[data-reel-fx="shuffle"] .preel-frame.card.leaving,
+[data-reel-fx="fold"] .preel-frame.card.leaving,
+[data-reel-fx="chevron"] .preel-frame.card.leaving,
+[data-reel-fx="riffle"] .preel-frame.card.leaving { z-index: 12; opacity: 1; }
+/* slip: travels to the back of the deck, fading out as it goes so the card
+   beneath is revealed through it rather than popping in behind it */
+[data-reel-fx="slip"] .preel-frame.card.leaving {
+  z-index: 12; opacity: 1; background: transparent;
+  animation: reel-slip-card .85s var(--ease) both; }
+[data-reel-fx="slip"] .preel-frame.card.leaving > * {
+  animation: reel-slip-fill .85s var(--ease) both; }
+/* three beats: (1) the card fades out in place, revealing the one beneath;
+   (2) it drops to the deck's rear layer and its border returns as an empty
+   frame; (3) the frame steps back the one notch, image fading back in — behind
+   the new top card and the second, so only its edge shows. */
+@keyframes reel-slip-card {
+  0%, 34%  { opacity: 1; z-index: 12; transform: translate(var(--fx), var(--fy)); box-shadow: 0 0 0 2px var(--tint); }
+  35%, 44% { opacity: 0; z-index: calc(9 - var(--k)); transform: translate(var(--fx), var(--fy)); box-shadow: 0 0 0 2px var(--tint); }
+  45%      { opacity: 1; z-index: calc(9 - var(--k)); transform: translate(var(--fx), var(--fy)); box-shadow: 0 0 0 2px var(--tint); }
+  /* the arrival opacity is the deck's own depth value, ramped across the whole
+     travel — clamped to 1 for the visible depths, so only a card landing past
+     the third slot fades away, and it does so gradually */
+  100%     { opacity: calc(3 - var(--k)); z-index: calc(9 - var(--k)); transform: translate(var(--sx), var(--sy)); box-shadow: 0 0 0 2px var(--tint); } }
+/* the image drops out for the reveal, then fades back in as the frame travels,
+   so the card arrives at the back already carrying its picture */
+@keyframes reel-slip-fill {
+  0%   { opacity: 1; }
+  34%, 45% { opacity: 0; }
+  82%, 100% { opacity: 1; } }
+/* deal: flies out along the same 45° line the stack is built on */
+[data-reel-fx="deal"] .preel-frame.card.leaving {
+  transform: translate(calc(var(--fx) + 76px), calc(var(--fy) - 76px)); opacity: 0; }
+/* shuffle: holds the top position and fades while the deck advances under it */
+[data-reel-fx="shuffle"] .preel-frame.card.leaving {
+  transform: translate(var(--fx), var(--fy)); opacity: 0; }
+/* fold: a 45° crease wipes the top card away, revealing the next underneath */
+[data-reel-fx="fold"] .preel-frame.card.leaving {
+  transform: translate(var(--fx), var(--fy));
+  mask-image: linear-gradient(45deg, #000 49.5%, transparent 50.5%);
+  mask-size: 300% 300%; mask-position: 0% 100%; }
+/* chevron: the incoming image is wiped ON over the outgoing one, same angle */
+[data-reel-fx="chevron"] .preel-frame.card.leaving {
+  transform: translate(var(--fx), var(--fy)); }
+[data-reel-fx="chevron"] .preel-frame.card.on {
+  z-index: 13; animation: reel-chevron .5s var(--ease) both; }
+@keyframes reel-chevron {
+  from { mask-image: linear-gradient(45deg, #000 49.5%, transparent 50.5%);
+    mask-size: 300% 300%; mask-position: 0% 100%; }
+  to { mask-image: linear-gradient(45deg, #000 49.5%, transparent 50.5%);
+    mask-size: 300% 300%; mask-position: 100% 0%; } }
+/* riffle: a quick lift-and-snap, the stack itself barely moves */
+[data-reel-fx="riffle"] .preel-frame.card {
+  transition: transform .3s var(--ease), opacity .3s var(--ease); }
+[data-reel-fx="riffle"] .preel-frame.card.leaving {
+  transform: translate(calc(var(--fx) - 9px), calc(var(--fy) + 9px)); opacity: 0; }
+[data-reel-fx="riffle"] .preel-frame.card.on { animation: reel-riffle .3s var(--ease) both; }
+@keyframes reel-riffle {
+  from { transform: translate(calc(var(--fx) - 7px), calc(var(--fy) + 7px)); }
+  to { transform: translate(var(--fx), var(--fy)); } }
+@media (prefers-reduced-motion: reduce) {
+  .preel-frame.card, .preel-frame.card.on { animation: none; transition: opacity .3s linear; } }
+.preel-frame { position: absolute; inset: 0; opacity: 0; transition: opacity 1s var(--ease); pointer-events: none; }
+.preel-frame.on { opacity: 1; pointer-events: auto; }
+/* the slot paints its own translucent placeholder tint; clear it so the bands
+   around a letterboxed image match the card's own letterbox color exactly */
+.preel-frame image-slot::part(frame), .pb-img image-slot::part(frame) { background: transparent; }
+/* the cards all share one height (the tallest item's); a shorter slot keeps its
+   own media ratio and CENTERS in that height, so the leftover space splits into
+   equal letterbox bands above and below. sizing the SLOT, not overriding its
+   internals, keeps the component's own reframe tool honest. */
+.preel-frame image-slot { display: block; width: 100%; height: 100%; }
+.preel-frame.card { display: flex; align-items: center; }
+.preel-frame.card > * { width: 100%; }
+.preel-frame.card image-slot { height: auto; aspect-ratio: var(--ar, auto); }
+/* authoring only: hovering the face — or dragging a file onto it — lifts the
+   still-empty slots out as a row of drop targets along the bottom. absolute,
+   so the face's box never changes size and nothing shifts as it folds. */
+/* no opacity transition on the tiles: inside the sheet's folded subtree a
+   transition from the base opacity:0 never ticks, which pinned them
+   invisible-but-clickable. reveal is an instant state change instead, and a
+   tile that is not revealed keeps pointer-events off so it swallows nothing. */
+.preel-frame.empty { transition: none; }
+.preel.dragging .preel-frame.empty:not(.on),
+.preel:hover .preel-frame.empty:not(.on) { opacity: 1; pointer-events: auto; z-index: 20;
+  inset: auto auto 8px calc(8px + var(--e) * (30% + 6px)); width: 30%; height: auto; aspect-ratio: 4/3; min-height: 46px;
+  outline: 1px dashed color-mix(in oklab, #fff 45%, transparent); outline-offset: -1px; }
+@media (hover: none) {
+  .preel-frame.empty:not(.on) { opacity: 1; pointer-events: auto; z-index: 20;
+    inset: auto auto 8px calc(8px + var(--e) * (30% + 6px)); width: 30%; height: auto; aspect-ratio: 4/3; min-height: 46px;
+    outline: 1px dashed color-mix(in oklab, #fff 45%, transparent); outline-offset: -1px; }
+}
+/* production: the spare "add a slide" tile is authoring-only chrome */
+html[data-static] .preel-frame.empty:not(.on) { display: none; }
+
+/* —— the folded-away case study, tucked in the crease between faces —— */
+.pnl-body { background: var(--paper); background-image: var(--printed); }
+
+/* —— the non-folding leaves: nav, hero, pillars, about, contact ——
+   they carry the full five-color mark down their edge, so the stripe reads as
+   one continuous print running the length of the sheet */
+/* the half folds' 45° ends cut inward by one chamfer, so the static leaves —
+   and their bar — start on that inset line, not the sheet edge */
+.leaf-static { cursor: default; margin: 0 8px 0 var(--chamfer, 8px); background: var(--paper); padding: clamp(20px, 2.6vw, 30px) clamp(20px, 2.8vw, 32px) clamp(20px, 2.6vw, 30px) var(--pad); }
+.leaf-static::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: var(--stripe-w); background: var(--ink); }
+/* the hero's bar matches the nav's: the five-color mark stays with the case
+   studies below */
+.hero-leaf::before { background: var(--ink); }
+/* the nav leaves top and bottom carry the full five-color mark — the sheet's
+   table of contents at both ends */
+.nav-leaf::before, .contact-leaf::before { background: var(--mark); }
+.leaf-static + .leaf-static { box-shadow: inset 0 1px 0 color-mix(in oklab, var(--fg) 12%, transparent); }
+.leaf-eyebrow { display: block; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin-bottom: clamp(14px, 1.8vw, 22px); }
+
+.nav-leaf, .contact-leaf { margin: 0; }
+/* the footer is a slim closing band: links and copyright on one line */
+.contact-leaf { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-top: 18.4px; padding-bottom: 18.4px; }
+.contact-leaf .contact-grid { display: contents; }
+.contact-leaf .contact-links { display: flex; align-items: center; gap: clamp(14px, 2vw, 26px); }
+.contact-leaf .contact-base { white-space: nowrap; margin: 0; }
+.nav-leaf { position: relative; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding-top: 16px; padding-bottom: 16px;
+  /* the name sits closer to the bar than body copy does — without the dot the
+     full text indent left it stranded */
+  padding-left: calc(var(--stripe-x) + var(--stripe-w) + clamp(12px, 2.4vw, 24px)); }
+.nav-leaf .brand { display: inline-flex; align-items: center; font-family: var(--font-display); font-size: clamp(14px, 1.4vw + 6px, 17px); color: var(--fg); text-decoration: none; }
+.nav-leaf .topnav { display: flex; gap: clamp(14px, 2vw, 26px); }
+.nav-leaf .topnav a { font-size: 14px; color: var(--muted); text-decoration: none; transition: color .2s var(--ease); }
+.nav-leaf .topnav a:hover { color: var(--fg); }
+/* hover cue: a rule runs down the left of the label to the leaf's bottom edge */
+.nav-leaf .topnav a { position: relative; --nav-drop: 16.4px; }
+.nav-leaf .topnav:not(.hero-links) a::after { content: ''; position: absolute; left: -9px; background: var(--fg); z-index: 2; pointer-events: none; }
+.nav-leaf .topnav:not(.hero-links) a::after { top: 2px; width: 1.5px; height: calc(100% + var(--nav-drop)); transform: scaleY(0); transform-origin: top center; transition: transform .2s var(--ease); }
+.nav-leaf .topnav:not(.hero-links) a:hover::after { transform: scaleY(1); }
+/* the contact set moved into the nav: keep the bordered-chip treatment there */
+.nav-leaf .topnav.hero-links { flex: none; flex-wrap: nowrap; white-space: nowrap; gap: 22px; padding-right: 14px; }
+.nav-leaf .topnav.hero-links a { font-family: inherit; font-size: 14px; white-space: nowrap; letter-spacing: normal; padding: 0; border: 0; background: none; color: var(--muted); transition: color .2s var(--ease); }
+.nav-leaf .topnav.hero-links a:hover { background: none; border: 0; color: var(--fg); }
+.nav-leaf .topnav.hero-links a::after { display: none; }
+/* too narrow for three links beside the name: drop Email, keep the two that
+   can't be recovered from the footer */
+@media (max-width: 400px) { .nav-leaf .topnav.hero-links a:first-child { display: none; } }
+
+.hero-leaf { display: grid; grid-template-columns: 1fr auto; gap: clamp(20px, 3vw, 48px); align-items: start; padding-top: 45px; padding-bottom: clamp(36px, 4.4vw, 58px);
+  /* the hero's text sits 15px further in on the left and 20px on the right */
+  padding-left: calc(var(--pad) + 15px); padding-right: calc(clamp(20px, 2.8vw, 32px) + 20px); }
+/* the headline is two nowrap lines, so its size is a fit problem, not a
+   breakpoint one: measure against the copy column and shrink only when the
+   longer line would otherwise reach the right margin (≈10.8em at any size) */
+.hero-copy { container-type: inline-size; }
+.hero-line { margin: 0; font-family: var(--font-display); font-size: min(37px, 8cqi); line-height: 1.08; letter-spacing: -0.012em; color: var(--fg); max-width: 26ch; text-wrap: balance; }
+/* two fixed lines: each phrase holds together and always breaks between them —
+   the type shrinks with the window instead of rewrapping */
+.hero-line .nb { display: block; white-space: nowrap; }
+.hero-line .nb:first-child { padding-bottom: 8px; }
+/* hero keywords sit in a bevel cut from the same light as the half folds: the
+   upper facet takes the crease's dimmed paper, the lower one its lit paper */
+.hero-line .kw { position: relative; display: inline-block; white-space: nowrap; border-style: solid; border-width: 0.11em; padding: calc(0.03em + 1px) 0.2em 0.06em; color: var(--fg);
+  --tint-shade: color-mix(in oklab, var(--paper-dim) 86%, oklch(0.13 0.015 300));
+  --tint-lit: color-mix(in oklab, var(--paper) 93%, oklch(0.97 0.01 300));
+  background: var(--paper);
+  border-top-color: var(--tint-shade);
+  border-left-color: color-mix(in oklab, var(--tint-shade) 70%, var(--paper));
+  border-right-color: color-mix(in oklab, var(--tint-lit) 70%, var(--paper));
+  border-bottom-color: var(--tint-lit); }
+.hero-tag { margin: clamp(14px, 1.6vw, 20px) 0 0; font-size: clamp(15px, 1.4vw, 18px); line-height: 1.5; color: var(--muted); max-width: none; text-wrap: pretty; }
+/* the tagline holds one line only where the hero row has room for it */
+@media (min-width: 1240px) { .hero-tag { white-space: nowrap; text-wrap-style: auto; } }
+.hero-impact { display: flex; align-items: flex-start; width: fit-content; margin-top: 16px; font-size: clamp(14px, 1.5vw, 19px); gap: 12px; font-weight: 400; color: var(--fg); }
+.hero-impact .rule { width: 16px; height: 16px; }
+/* the line holds together or breaks in exactly one place, after "to" */
+.hero-impact .hi-text { min-width: 0; }
+.hero-impact .nb { white-space: nowrap; }
+.hero-meta { display: flex; flex-direction: column; align-items: flex-start; text-align: left; gap: 14px;
+  /* nudged down so the mono line's cap sits level with the headline's, not with its
+     line box — the small type's leading is proportionally much tighter */
+  padding-top: 0; }
+.hero-loc { margin: 0; font-size: 11px; line-height: 1.8; letter-spacing: 0.06em; color: var(--muted); }
+.hero-links { display: flex; margin: 0; gap: 8px; }
+.hero-links a { position: relative; font-family: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; letter-spacing: 0.06em; padding: 7px 14px; border: 1px solid color-mix(in oklab, var(--fg) 18%, transparent); color: var(--fg); text-decoration: none; transition: border-color .2s var(--ease), background .2s var(--ease); }
+.hero-links a:hover { background: color-mix(in oklab, var(--fg) 12%, transparent); border-color: color-mix(in oklab, var(--fg) 45%, transparent); }
+/* corner flag: the chamfer filled in, tint-colored — 10px along the top edge, 10px down the right */
+.hero-links a::after { content: ''; position: absolute; top: 0; right: 0; left: auto; bottom: auto; transition: none; width: 10px; height: 10px; background: oklch(0.97 0.01 300 / .12); clip-path: polygon(100% 0, 100% 100%, 0 0); pointer-events: none; }
+
+.pillars { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(18px, 2.6vw, 40px); }
+.pillar-k { display: flex; gap: 9px; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 600; color: var(--fg); margin-bottom: 10px; }
+.pillar-k .ix { color: var(--tint); }
+.pillar p { margin: 0; font-size: 15px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+
+.about-leaf { padding-top: 45px; padding-bottom: clamp(36px, 4.4vw, 58px); }
+.about-leaf .pillars { margin-bottom: clamp(30px, 4vw, 52px); }
+.about-eyebrow { margin-top: 0; color: var(--fg); }
+.about-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: clamp(20px, 3vw, 48px); align-items: start; }
+.about-body p { margin: 0 0 14px; font-size: 15px; line-height: 1.65; color: var(--muted); text-wrap: pretty; }
+.about-body em { font-style: normal; color: var(--fg); }
+.about-list { margin: 0; padding: 0; list-style: none; counter-reset: about; display: grid; gap: 13px; }
+.about-list li { counter-increment: about; position: relative; padding-left: 26px; font-size: 15px; line-height: 1.6; color: var(--muted); text-wrap: pretty; }
+.about-list li::before { content: counter(about) "."; position: absolute; left: 0; top: 0; font-family: var(--font-mono); font-size: 13px; line-height: 1.85; color: var(--fg); }
+.about-facts { margin: 0; display: grid; gap: 14px; }
+.about-facts dt { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--fg); margin-bottom: 4px; }
+.about-facts dd { margin: 0; font-size: 14px; line-height: 1.5; color: var(--muted); }
+
+.contact-grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: clamp(20px, 3vw, 48px); align-items: end; }
+.contact-line { margin: 0; font-family: var(--font-display); font-size: clamp(26px, 3.4vw, 42px); line-height: 1.1; color: var(--fg); text-wrap: balance; }
+.contact-line a { color: var(--tint); }
+.contact-links { display: grid; gap: 8px; justify-items: start; }
+.contact-links a { font-size: 14px; color: var(--muted); text-decoration: none; border-bottom: 0; transition: color .2s var(--ease); }
+.contact-links a:hover { color: var(--fg); }
+.contact-base { margin-top: clamp(26px, 3.4vw, 44px); font-size: 11px; letter-spacing: 0.06em; color: color-mix(in oklab, var(--muted) 70%, transparent); }
+
+/* height is animated on an explicit JS timeline (see paper-accordion.jsx) */
+.pnl-clip { contain: layout paint; height: 0; overflow: hidden; background: var(--paper); background-image: var(--printed); }
+.pnl-inner {
+  transform-origin: top center;
+  transform: rotateX(-84deg);
+  background: var(--paper);
+  background-image: var(--printed);
+  opacity: 0;
+  transition: transform .46s cubic-bezier(.22,.86,.2,1) var(--d), opacity .5s var(--ease) var(--d);
+  padding: 0 var(--pad-r) clamp(30px, 3.6vw, 44px) var(--pad);
+}
+.sheet.open .pnl-inner { transform: none; opacity: 1; }
+
+/* opening ripples top→bottom; closing tucks bottom→top */
+.sheet .pnl { --d: calc((4 - var(--i)) * 60ms); }
+.sheet.open .pnl { --d: calc(var(--i) * 85ms); }
+
+/* —— expanded write-up —— */
+.pb-row { display: grid; grid-template-columns: 1.5fr 1fr; gap: clamp(24px, 3.2vw, 44px); align-items: start; padding-top: clamp(34px, 3.6vw, 52px); }
+/* the first row sits right under the crease — the face's own bottom padding is
+   already the gap, so it adds none of its own, beyond room for the cards' 2px
+   outer border, which the clip edge would otherwise shave off */
+.pb-row:first-child { padding-top: 3px; }
+/* the row after a deck-plus-video pair reads tight: the flat video has none of
+   the deck's stepped overhang below it, so the row buys that space back */
+.pb-row:has(.pb-media) + .pb-row { padding-top: calc(clamp(34px, 3.6vw, 52px) + 10px); }
+/* body-row decks keep the older anchor: the live card holds the column edge and
+   the stack steps down-left behind it */
+.pb-shots .preel-frame.card { --sx: calc(var(--k) * var(--step) * -1); --sy: calc(var(--k) * var(--step)); --fx: 0px; --fy: 0px; }
+.pb-shots { aspect-ratio: 16/9; }
+.pb-img { position: relative; overflow: hidden; aspect-ratio: 16/9; --letterbox: color-mix(in oklab, var(--tint) 14%, color-mix(in oklab, black 8%, var(--bg))); background: var(--letterbox); }
+.pb-img image-slot { display: block; width: 100%; height: 100%; }
+/* media and copy both sit lower inside the row, staying top-aligned */
+.pb-row > .preel, .pb-row > .pb-img, .pb-row > div { margin-top: 30px; }
+/* a row carrying a second frame under its deck: both share the row's lead-in
+   space, then sit a card-gap apart */
+.pb-media { display: grid; gap: 47px; }
+.pb-media > .preel { margin-top: 0; }
+.pb-media > .pb-shots:not(:last-child) { margin-bottom: calc(var(--kmax, 0) * 5px); }
+.pb-row p + p { margin-top: .85em; }
+/* a link paragraph is a footer to the section, so it sits a little further down */
+.pb-row p + p:has(a.pb-link) { margin-top: calc(.85em + 10px); }
+/* lettered lines inside a paragraph read as a list: indented, with wraps
+   hanging under the text instead of returning to the letter */
+.pb-row p .pb-li { display: block; padding-left: 2.5em; text-indent: -1.3em; margin-top: .3em; }
+.pb-row p em { font-style: normal; font-weight: 600; color: color-mix(in oklab, var(--tint) 80%, var(--fg)); }
+/* links in the copy: tint ink, no underline, and the corner arrow marking that
+   they leave the page — the same cue the footer uses */
+.pb-row p a.pb-link { color: color-mix(in oklab, var(--tint) 80%, var(--fg)); text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; transition: color .2s var(--ease); }
+.pb-row p a.pb-link:hover { color: var(--fg); }
+.pb-row p a.pb-link .ext { width: 11px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+.pb-num { display: flex; align-items: center; gap: 9px; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; font-weight: 600; color: var(--fg); margin-bottom: 10px; }
+.pb-num .ix { letter-spacing: 0.16em; font-size: inherit; font-weight: inherit; color: var(--tint); }
+.pb-row p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.6; text-wrap: pretty; }
+
+@media (max-width: 900px) {
+  .hero-leaf { grid-template-columns: 1fr; row-gap: 11px; }
+  .hero-meta { align-items: flex-start; text-align: left; padding-top: 0; }
+  .pnl-face { grid-template-columns: 1fr; }
+  .pillars, .about-grid, .contact-grid { grid-template-columns: 1fr; }
+  .contact-grid { align-items: start; }
+  .pb-row { grid-template-columns: 1fr; }
+  /* stacked: only the media keeps the lead-in space — the copy follows straight
+     under its image, no second gap */
+  .pb-row > div { margin-top: 0; }
+  /* stacked, the first row's media sits right under the face — the face's own
+     bottom padding is already the gap */
+  .pb-row:first-child > .preel, .pb-row:first-child > .pb-media { margin-top: 0; }
+  /* stacked, the deck-plus-video pair tightens: the pair keeps the row's normal
+     lead-in, and the video follows its deck closely */
+  .pb-row > .pb-media { margin-top: 30px; }
+  .pb-media { gap: 26px; }
+  /* stacked decks hang below their front card: the copy measures from the
+     BACKMOST card's edge so the gap looks the same as beside a flat image */
+  .pb-row > .pb-shots { margin-bottom: calc(var(--kmax, 0) * 5px); }
+  .sheet { perspective: 900px; }
+}
+/* phones: the sheet keeps its folds, but the printed bar sits closer to the edge,
+   the gutters tighten, and the single-line nav/footer rows are allowed to wrap */
+@media (max-width: 560px) {
+  .leaf, .sheet { --stripe-x: 0px; --stripe-w: 2px; --pad: calc(var(--stripe-x) + var(--stripe-w) + 28px); --pad-r: 30px; }
+  .sheet { --gusset: 12px; --chamfer: 6px; --swell: 18px; }
+  .sheet .crease-lead, .sheet .crease-trail, .sheet .pleats > .pnl:last-child > .crease { --chamfer: 6px; height: 6px; }
+  .leaf-static { margin: 0 6px; padding: 34px var(--pad-r) 34px var(--pad); }
+  /* the nav and footer stay full-bleed — they frame the inset work */
+  .nav-leaf, .contact-leaf { margin: 0; }
+  .hero-leaf { padding-left: var(--pad); padding-right: var(--pad-r); padding-top: 46px; padding-bottom: 40px; }
+  .nav-leaf { flex-wrap: nowrap; gap: 8px 12px; padding: 14px var(--pad-r) 14px calc(var(--pad) * .72); }
+  .nav-leaf .brand { min-width: 0; white-space: nowrap; }
+  .nav-leaf .topnav { gap: 16px; }
+  /* the leaf's own right padding is the whole margin here — the links row adds
+     none of its own, or Resume sits 44px off the edge */
+  .nav-leaf .topnav.hero-links { gap: 12px; padding-right: 0; }
+  .nav-leaf .topnav.hero-links a { font-size: 11.5px; }  /* links and copyright hold one line: the shorter labels and a tighter gap fit */
+  .contact-leaf { flex-wrap: nowrap; align-items: center; gap: 10px; padding: 18px var(--pad-r) 18px var(--pad); }
+  .contact-leaf .contact-links { flex-wrap: nowrap; gap: 14px; }
+  .contact-leaf .contact-links a { font-size: 13px; }
+  /* the year alone carries the notice here — the name is already in the nav */
+  .contact-leaf .contact-base { white-space: nowrap; font-size: 10px; }
+  .contact-leaf .cb-name { display: none; }
+  .pnl-face { padding: 30px var(--pad-r) 30px var(--pad); gap: 26px 20px; }
+  /* image and copy share one column edge — both run the full text measure */
+  .pnl-face .preel { max-width: none; }
+  .pnl-inner { padding: 0 var(--pad-r) 42px var(--pad); }
+  .pnl-title { font-size: 22px; }
+  .hero-meta { gap: 12px; }
+  .hero-links { display: flex; flex-wrap: wrap; gap: 10px; }
+  .hero-links a { padding: 12px 16px; }
+  .pnl-desc { font-size: 14.5px; }
+  .pb-row { gap: 20px; padding-top: 30px; }
+  .pb-img { max-width: none; }
+}
+/* —— page ground: one print the sheet lies on ——
+   Above and below the work the ground is a graph grid: two hairline gradients square
+   to each other. Beside the case studies only the VERTICAL family survives, drawn as
+   a zigzag — the same stripes skewed ±45° in 60px bands (60px = 2 × the 30px pitch,
+   so the pattern lands back in register at every band edge and the segments join).
+   Opening the sheet animates the skew to 0°, and the chevrons straighten onto the
+   grid's vertical lines above and below. */
+@property --zag { syntax: "<angle>"; inherits: true; initial-value: 45deg; }
+body { background: oklch(0.275 0.014 302); }
+.ground {
+  position: absolute; left: 50%; width: calc(100vw + 480px); margin-left: calc(-50vw - 240px);
+  z-index: -1; overflow: hidden; pointer-events: none; background-color: var(--zig-light);
+  /* every length in the print is a whole number of DEVICE pixels at dpr 1.25,
+     1.5, 1.75, 2, 2.5 and 3 — i.e. a multiple of 4 — which is what stops the
+     stripes rasterizing 6px in some bands and 7px in others. the 10px pitch
+     was the real source of the thick-band artifact: 10 × 1.25 = 12.5, so the
+     45° skew put every band on a different subpixel phase.
+     8/4 keeps the original 50% duty cycle, just 20% denser. */
+  --pitch: 8px; --ribbon: 4px; --zig-light: oklch(0.275 0.014 302); /* the same purple as the static leaves' paper */
+  --zig-dark: var(--paper);
+  --rule: repeating-linear-gradient(90deg, var(--zig-dark) 0 var(--ribbon), transparent var(--ribbon) var(--pitch));
+}
+/* the end zones: bare ground — the chevrons carry the whole print. the fill
+   is pitched so BOTH fold bands read: too dark and the 8% shadow has no room
+   left below it and disappears while the 2% highlight jumps off; 30% sits far
+   enough above the page purple for the shadow to darken visibly, and close
+   enough to the highlight's own value to stop it contrasting. */
+.ground-flat { background-image: none; background-color: color-mix(in oklab, var(--zig-dark) 30%, var(--zig-light)); }
+/* the two nav bars: a solid field in the stripe colour rather than the print
+   — the ends read as emphasised without adding another pattern. it sits only
+   behind the nav leaves, so the hero and about zones stay bare ground, and it
+   is inert: only the chevron bands take clicks. */
+.ground-solid { background-color: color-mix(in oklab, var(--zig-dark) 45%, var(--zig-light)); }
+/* each field runs to the crease beside it and carries that fold's own shading,
+   so the light on the ground agrees with the light on the paper: the band
+   below the top nav takes the 12% shadow, the band above the bottom nav takes
+   the 2% highlight — the ground reads harder than the sheet, so the highlight
+   is softer than the paper's 3% and the shadow deeper than its 6%. */
+.ground-nav { top: 0; height: var(--nh, 0px);
+  background-image: linear-gradient(oklch(0 0 0 / 0) 0 calc(100% - var(--nfold, 8px)), oklch(0 0 0 / .12) calc(100% - var(--nfold, 8px)) 100%); }
+.ground-foot { bottom: 0; height: var(--fh, 0px);
+  background-image: linear-gradient(oklch(1 0 0 / .02) 0 var(--ffold, 8px), oklch(1 0 0 / 0) var(--ffold, 8px) 100%); }
+/* the same idea on the two half folds bounding the case studies: the chevron
+   zone starts at the lead crease and stops at the last pleat crease, so these
+   fields fill exactly those fold bands — solid, with the fold's own light.
+   above the work takes the 2% highlight, below it the 12% shadow. */
+.ground-fold-top { top: calc(var(--gt, 0px) - var(--lfold, 8px)); height: var(--lfold, 8px);
+  background-image: linear-gradient(oklch(1 0 0 / .02) 0 0); }
+.ground-fold-bot { bottom: calc(var(--gb, 0px) - var(--tfold, 16px)); height: var(--tfold, 16px);
+  background-image: linear-gradient(oklch(0 0 0 / .12) 0 0); }
+.ground-top { top: 0; height: var(--gt, 0px); }
+.ground-bot { bottom: 0; height: var(--gb, 0px); }
+/* the case-study zone: verticals only, zigzagging */
+.ground-diag { top: var(--gt, 0px); bottom: var(--gb, 0px); }
+/* 48px — the band height that satisfies every constraint at once:
+   • 6 × the 8px pitch, so a 45° skew shifts the bottom edge by a whole number
+     of pitches and the chevrons meet seamlessly at every joint.
+   • a multiple of 4, so it is a whole number of device pixels at every common
+     dpr — each band's permanent layer cannot round up and overlap its
+     neighbour, which stacked antialiased stripes into thick bands.
+   in short: pitch 8, ribbon 4, band 48 — all multiples of 4, no decimals
+   anywhere in the system. */
+.ground-diag > i { display: block; height: 48px; transform-origin: top; background-image: var(--rule);
+  transform: skewX(var(--zag));
+  /* the pop was never the animation — it was the DEMOTION at the end: the
+     compositor auto-promotes an animating transform, then discards the layer
+     and re-rasterizes crisp, and that re-raster is the brightness jump.
+     will-change here makes each layer PERMANENT: nothing is promoted when the
+     transition starts or discarded when it ends, so there is no re-raster to
+     see — while the skew still rides the compositor as a matrix update per
+     frame, which is the only way it is genuinely smooth. affordable because
+     the band count is measured (~40), not 400. */
+  will-change: transform;
+  transition: transform .42s cubic-bezier(.65,0,.35,1); }
+.ground-diag > i:nth-child(odd) { transform: skewX(calc(var(--zag) * -1)); }
+.sheet { --zag: 45deg; }
+/* only the printed bands take clicks — the bare end zones and the plain page
+   around them stay inert, so the cursor changes exactly where the chevrons
+   and verticals are */
+.ground-diag > i { pointer-events: auto; cursor: pointer; }
+.sheet.open { --zag: 0deg; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pnl-body, .pnl-inner, .crease, .preel { transition: none; }
+  .preel-frame { transition: none; }
+  .ground-diag > i { transition: none; }
+  .pnl-inner { transform: none; }
+  .pnl-impact .rule .mk-ring { animation: none; opacity: .35; transform: scale(.62); }
+}
+
+/* the quiz's own mark, set inline: the peace sign sits behind and above the
+   face so the two fingers read as ears */
+.bunny { position: relative; display: inline-block; width: 1.15em; height: 1em; vertical-align: -0.15em; margin-left: -1px; }
+.bunny-ears, .bunny-face { position: absolute; line-height: 1; }
+/* the ears are centered on the face and lifted just clear of its baseline */
+.bunny-face { left: 0.1em; top: 0.06em; font-size: calc(0.86em + 1px); }
+.bunny-ears { left: 50%; bottom: 1px; transform: translateX(calc(-50% + 2px)) rotate(-4deg); font-size: 1.22em; }

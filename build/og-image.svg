@@ -1,0 +1,16 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="mark" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#e37fa8"/>
+      <stop offset="33%" stop-color="#dd7d5f"/>
+      <stop offset="66%" stop-color="#c98a4f"/>
+      <stop offset="100%" stop-color="#b99657"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="#28212a"/>
+  <rect x="0" y="0" width="10" height="630" fill="url(#mark)"/>
+  <text x="90" y="270" font-family="Georgia, 'Times New Roman', serif" font-size="76" font-weight="400" fill="#e9e8e3">Clint Beharry</text>
+  <text x="90" y="336" font-family="Georgia, 'Times New Roman', serif" font-size="40" font-weight="400" fill="#cf88c8">Lead Product Designer</text>
+  <text x="90" y="386" font-family="Georgia, 'Times New Roman', serif" font-size="40" font-weight="400" fill="#cf88c8">for AI &amp; Social projects</text>
+  <text x="90" y="460" font-family="'Trebuchet MS', 'Helvetica Neue', Arial, sans-serif" font-size="24" fill="#b7b4b0">Product &amp; game design · Portland, OR</text>
+</svg>

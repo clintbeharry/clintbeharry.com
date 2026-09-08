@@ -1,0 +1,11 @@
+{
+  "name": "clintbeharry.com",
+  "private": true,
+  "description": "Portfolio site for Clint Beharry. Static HTML/CSS/JS — the only build step is compiling build/portfolio-app.jsx to portfolio-app.min.js.",
+  "scripts": {
+    "build": "esbuild build/portfolio-app.jsx --jsx-factory=React.createElement --jsx-fragment=React.Fragment --minify --target=es2019 --outfile=portfolio-app.min.js"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.0"
+  }
+}
