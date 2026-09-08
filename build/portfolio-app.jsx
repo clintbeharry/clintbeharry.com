@@ -351,7 +351,7 @@ function Pleat({ card, idx, open, onToggle }) {
         </div>
       </div>
       <div className="crease" aria-hidden="true"
-      style={idx + 1 < CARDS.length ? { "--tint-next": TINTS[idx + 1], "--paper-next": PAPERS[idx + 1] } : null}><i className="crease-bar" /></div>
+      style={idx + 1 < CARDS.length ? { "--tint-next": TINTS[idx + 1], "--paper-next": PAPERS[idx + 1] } : null}><i className="crease-bar" /><i className="crease-disc"><svg viewBox="-12 -12 24 24"><path className="up" d="M-5-5L0-10l5 5" /><path className="dn" d="M-5 5L0 10l5-5" /></svg></i></div>
     </article>);
 
 }

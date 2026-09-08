@@ -188,7 +188,7 @@
   position: relative; z-index: 3;
   display: grid; grid-template-columns: minmax(200px, 32%) 1fr;
   gap: clamp(26px, 3.2vw, 40px) clamp(38px, 2.6vw + 20px, 54px); align-items: center;
-  padding: clamp(30px, 3.6vw, 44px) var(--pad-r) clamp(30px, 3.6vw, 44px) var(--pad);
+  padding: calc(clamp(30px, 3.6vw, 44px) + 10px) var(--pad-r) calc(clamp(30px, 3.6vw, 44px) + 10px) var(--pad);
   background: var(--paper);
   background-image: var(--printed);
 }
@@ -196,7 +196,7 @@
 /* expanded panels breathe: the face gains 30px above its image while the fold
    animates, and gives it back on the way closed, so the collapsed stack stays tight */
 .pnl-face { transition: padding .46s cubic-bezier(.22,.86,.2,1); }
-.pnl.open > .pnl-face { padding-top: calc(clamp(30px, 3.6vw, 44px) + 40px); }
+.pnl.open > .pnl-face { padding-top: calc(clamp(30px, 3.6vw, 44px) + 40px); padding-bottom: clamp(30px, 3.6vw, 44px); }
 /* the leaf just above an open one matches it, so the crease between them sits in
    the same breathing room — from the face when that leaf is closed, from the
    body's own tail when it is open (that tail sits outside the clip, so the fold
@@ -692,3 +692,29 @@ body { background: oklch(0.275 0.014 302); }
 /* the ears are centered on the face and lifted just clear of its baseline */
 .bunny-face { left: 0.1em; top: 0.06em; font-size: calc(0.86em + 1px); }
 .bunny-ears { left: 50%; bottom: 1px; transform: translateX(calc(-50% + 2px)) rotate(-4deg); font-size: 1.22em; }
+
+/* —— the crease disc: the one control on the sheet ——
+   a stroked circle centred on every case-study fold, holding two bare chevrons.
+   Closed they point apart (the sheet wants to open); open they flip in place and
+   point inward. It carries no tint — the header/footer leaf paper for the fill
+   and the nav-link ink for the stroke — so it reads as hardware on the fold
+   rather than as part of any one case study. */
+.pleats > .pnl > .crease { z-index: 5; }
+/* the last pleat's fold is the bottom of the accordion — nothing below it to
+   open, so it carries no disc */
+.pleats > .pnl:last-child > .crease .crease-disc { display: none; }
+.crease-disc { --disc: 46px; --leaf: color-mix(in oklab, var(--surface) 94%, oklch(0.95 0.003 300));
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: var(--disc); height: var(--disc); display: grid; place-items: center; z-index: 4;
+  border-radius: 50%; border: 1.5px solid color-mix(in oklab, var(--muted) 55%, transparent);
+  background: var(--leaf); color: var(--muted); cursor: pointer; -webkit-tap-highlight-color: transparent;
+  transition: color .2s var(--ease), border-color .2s var(--ease); }
+.crease-disc svg { width: calc(var(--disc) * .42); height: calc(var(--disc) * .42); overflow: visible;
+  fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.crease-disc path { transform-box: fill-box; transform-origin: center; transition: transform .46s cubic-bezier(.22,.86,.2,1); }
+.sheet.open .crease-disc path { transform: rotate(180deg); }
+@media (hover: hover) and (pointer: fine) {
+  .crease-disc:hover { color: var(--fg); border-color: color-mix(in oklab, var(--fg) 45%, transparent); }
+}
+.crease-disc:active { color: var(--fg); }
+@media (prefers-reduced-motion: reduce) { .crease-disc path { transition: none; } }
