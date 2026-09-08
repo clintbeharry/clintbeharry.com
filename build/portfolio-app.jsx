@@ -25,6 +25,15 @@ const { useState, useEffect, useRef, useLayoutEffect } = React;
 
 const NAME = "Clint Beharry";
 const EMAIL = "clintbeharry@gmail.com";
+
+/* GoatCounter custom event. Fire-and-forget: never blocks the link's own
+   navigation (mailto: / target=_blank), and no-ops if the async count.js
+   script hasn't loaded yet (slow connection, ad blocker, etc). */
+function track(path, title) {
+  if (window.goatcounter && window.goatcounter.count) {
+    window.goatcounter.count({ path: path, title: title || path, event: true });
+  }
+}
 /* the palette walks one direction — pink → red → orange → yellow — so the bar
    and the papers behind it read as one stepped gradient down the sheet */
 const TINTS = ["oklch(0.6 0.13 350)", "oklch(0.633 0.127 20)", "oklch(0.667 0.123 50)", "oklch(0.7 0.12 80)"];
@@ -395,6 +404,8 @@ function PaperWork() {
     if (cancelRun.current) cancelRun.current();
     const nextOpen = !open;
     const pnl = target && target.closest ? target.closest(".pnl") : null;
+    // only the open direction is a meaningful "looked at this project" signal
+    if (nextOpen && pnl && pnl.id) track("/open/" + pnl.id, "Opened " + pnl.id);
     let anchorY = pnl ? pnl.getBoundingClientRect().top : null;
     /* closing: the clicked study's top is often far above the viewport (you were
        reading its body), and holding that offset would leave the collapsed face
@@ -570,9 +581,9 @@ function PaperWork() {
           <header className="leaf leaf-static nav-leaf">
             <a href="#top" className="brand">{NAME}</a>
             <nav className="topnav hero-links">
-              <a href={"mailto:" + EMAIL}>Email</a>
-              <a href="https://www.linkedin.com/in/clint-beharry-2a9384b2/" target="_blank" rel="noopener">LinkedIn</a>
-              <a href="/clintbeharry-resume.pdf" target="_blank" rel="noopener">Resume</a>
+              <a href={"mailto:" + EMAIL} onClick={() => track("/click/email", "Email click")}>Email</a>
+              <a href="https://www.linkedin.com/in/clint-beharry-2a9384b2/" target="_blank" rel="noopener" onClick={() => track("/click/linkedin", "LinkedIn click")}>LinkedIn</a>
+              <a href="/clintbeharry-resume.pdf" target="_blank" rel="noopener" onClick={() => track("/click/resume", "Resume click")}>Resume</a>
             </nav>
           </header>
           <div className="crease crease-trail" aria-hidden="true"><i className="crease-bar" /></div>
@@ -618,9 +629,9 @@ function PaperWork() {
           <footer className="leaf leaf-static contact-leaf" id="contact">
             <div className="contact-grid">
               <div className="contact-links">
-                <a href={"mailto:" + EMAIL}>Email</a>
-                <a href="https://www.linkedin.com/in/clint-beharry-2a9384b2/" target="_blank" rel="noopener">LinkedIn</a>
-                <a href="/clintbeharry-resume.pdf" target="_blank" rel="noopener">Resume</a>
+                <a href={"mailto:" + EMAIL} onClick={() => track("/click/email", "Email click")}>Email</a>
+                <a href="https://www.linkedin.com/in/clint-beharry-2a9384b2/" target="_blank" rel="noopener" onClick={() => track("/click/linkedin", "LinkedIn click")}>LinkedIn</a>
+                <a href="/clintbeharry-resume.pdf" target="_blank" rel="noopener" onClick={() => track("/click/resume", "Resume click")}>Resume</a>
               </div>
             </div>
             <div className="contact-base mono">© {new Date().getFullYear()} <span className="cb-name">{NAME}</span></div>
