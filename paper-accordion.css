@@ -511,13 +511,20 @@ html[data-static] .preel-frame.empty:not(.on) { display: none; }
 .pb-row > .preel, .pb-row > .pb-img, .pb-row > div { margin-top: 30px; }
 /* a row carrying a second frame under its deck: both share the row's lead-in
    space, then sit a card-gap apart */
-/* flex, not grid: a grid item's auto-sized track can go stale in Safari when
-   the item's aspect-ratio is set inline by JS after layout (exactly what
-   happens here once a video's real dimensions replace the 16:9 CSS default)
-   -- Safari then fails to grow the container to match, and the last frame
-   visually overflows past .pb-media's own bottom edge. Flex re-sizes on that
-   change reliably in every engine tested. */
+/* flex, not grid: more reliable than grid at resizing to fit a child whose
+   own box changes after layout, which is what happens here (see below). */
 .pb-media { display: flex; flex-direction: column; gap: 47px; }
+/* .preel transitions its own aspect-ratio (paper-accordion.css, ~line 238)
+   so a reel's frame reshapes smoothly when different content shows. Once a
+   video's real ~1.82 ratio replaces the 16:9 CSS default, that transition
+   animates the frame taller over .5s -- and confirmed via a real-device
+   debug readout, Safari does not keep .pb-media's own box growing in step
+   with a transitioning child, so the video ends up rendering up to 20px
+   below its own parent's bottom edge (Chromium tracks it correctly). Kill
+   the transition here specifically: the reshape is barely noticeable on a
+   one-shot video load, so trading it away for a container that never
+   desyncs from its content is the right call for this one row. */
+.pb-media .preel { transition: none; }
 .pb-media > .preel { margin-top: 0; }
 .pb-media > .pb-shots:not(:last-child) { margin-bottom: calc(var(--kmax, 0) * 5px); }
 .pb-row p + p { margin-top: .85em; }
