@@ -2,6 +2,7 @@
    no longer depends on the session sidecar. slot id -> file. */
 window.SLOT_IMAGES = {
   "meta-genai-process": "media/meta-genai-process.webp",
+  "meta-genai-process-1": "media/meta-genai-process-1.webp",
   "meta-genai-problem": "media/meta-genai-problem.webp",
   "meta-genai-solution-1": "media/meta-genai-solution-1.webp",
   "meta-genai-impact": "media/meta-genai-impact.webp",
