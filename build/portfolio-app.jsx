@@ -611,7 +611,7 @@ function PaperWork() {
                 <ul className="about-list">
                   <li>Most product designers can make an interface look good, especially with AI tools today. Few can sit in a room where engineering, leadership and users disagree and still walk out with a plan everyone can build from.</li>
                   <li>I unite strategy with a computer engineering background, deep research experience with social scientists on how technology changes behavior, and fifteen years of lessons building businesses across web, mobile, XR, and AI.</li>
-                  <li>I don’t just use AI tools to design, I deeply investigate AI models and build the AI tooling. And instead of judging AI as good or bad, I curiously explore what this inevitable technology means for humanity.</li>
+                  <li>I don’t just use AI tools to design, I deeply investigate AI models, organize data architecture, and build the AI tooling itself. I don’t judge AI as holistically good or bad, I curiously explore what this incredible technology means for humanity.</li>
                   <li>I treat a wrong assumption as data, not failure, and follow it to where the real value is. Even if that reshapes the product’s whole thesis.</li>
                   <li>I design for behavior and the business model, interfaces are ultimately a mediary. I step up to what the product needs, job description or not, because I love what I do and the ownership follows naturally.</li>
                 </ul>
