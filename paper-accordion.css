@@ -584,6 +584,10 @@ html[data-static] .preel-frame.empty:not(.on) { display: none; }
   /* the nav and footer stay full-bleed — they frame the inset work */
   .nav-leaf, .contact-leaf { margin: 0; }
   .hero-leaf { padding-left: var(--pad); padding-right: var(--pad-r); padding-top: 46px; padding-bottom: 40px; }
+  /* matches hero-leaf's top/bottom -- without this it falls back to the
+     generic .leaf-static 34px, tighter than the hero above "About" and
+     below the last about-fact */
+  .about-leaf { padding-top: 46px; padding-bottom: 40px; }
   .nav-leaf { flex-wrap: nowrap; gap: 8px 12px; padding: 14px var(--pad-r) 14px var(--pad-r); }
   .nav-leaf .brand { min-width: 0; white-space: nowrap; }
   .nav-leaf .topnav { gap: 16px; }
