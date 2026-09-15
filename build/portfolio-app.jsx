@@ -62,10 +62,10 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{ "accent": "Plum", "displayFont": "Ame
 const FACES = [
 { uid: "meta-genai", title: "Generative AI Characters for Meta",
   impact: "4x character creation growth \u00b7 10x faster \u00b7 3x retention \u00b7 6 months from impasse to shipped" },
-{ uid: "wsj-immersed", title: "To AI or Not to AI?",
-  impact: "Self-initiated, solo design and build \u00b7 100 use cases \u00b7 4x sharing \u00b7 80% comparing with others" },
 { uid: "wonderscope", title: "Wonderscope",
   impact: "Apple Design Award \u00b7 1M+ kids taught to read \u00b7 Acquired by Amira Learning" },
+{ uid: "wsj-immersed", title: "To AI or Not to AI?",
+  impact: "Self-initiated, solo design and build \u00b7 100 use cases \u00b7 4x sharing \u00b7 80% comparing with others" },
 { uid: "case-study-five", title: "The Wall Street Journal VR",
   impact: "Launched at Google I/O \u00b7 Featured in CNET, Fast Company \u00b7 Design system still in use today" }];
 const CARDS = FACES.map((f) => ({ ...f, desc: ((window.PROJECTS || []).find((p) => p.uid === f.uid) || {}).desc || "" }));
