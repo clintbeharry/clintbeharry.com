@@ -23,7 +23,7 @@ window.PROJECTS = [
     role: "Meta Reality Labs, Staff Product Designer & Prototyper",
     num: "01",
     categories: ["product"],
-    title: "Generative AI Characters for Meta",
+    title: "Meta AI Character Creation",
     year: "2025",
     tags: ["Product Design", "AI", "0\u21921"],
     desc: "I turned complex character creation into a simple AI conversation for the world's largest social platform, but the breakthrough was aligning leadership & engineering.",

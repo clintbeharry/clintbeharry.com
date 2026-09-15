@@ -60,7 +60,7 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{ "accent": "Plum", "displayFont": "Ame
 /* face order + the short metrics line; the one-line summary is pulled from
    data.js so the collapsed face and the write-up can never drift apart */
 const FACES = [
-{ uid: "meta-genai", title: "Generative AI Characters for Meta",
+{ uid: "meta-genai", title: "Meta AI Character Creation",
   impact: "4x character creation growth \u00b7 10x faster \u00b7 3x retention \u00b7 6 months from impasse to shipped" },
 { uid: "wonderscope", title: "Wonderscope",
   impact: "Apple Design Award \u00b7 1M+ kids taught to read \u00b7 Acquired by Amira Learning" },
