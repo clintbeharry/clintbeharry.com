@@ -553,6 +553,10 @@ html[data-static] .preel-frame.empty:not(.on) { display: none; }
   .hero-meta { align-items: flex-start; text-align: left; padding-top: 0; }
   .pnl-face { grid-template-columns: 1fr; }
   .pillars, .about-grid, .contact-grid { grid-template-columns: 1fr; }
+  /* stacked single-column: the grid's own gap becomes vertical space between
+     the bullets and Disciplines -- 20px extra on top of that, row-gap only
+     so the (now-irrelevant) column-gap for the wide layout is untouched */
+  .about-grid { row-gap: calc(clamp(20px, 3vw, 48px) + 20px); }
   .contact-grid { align-items: start; }
   .pb-row { grid-template-columns: 1fr; }
   /* stacked: only the media keeps the lead-in space — the copy follows straight
