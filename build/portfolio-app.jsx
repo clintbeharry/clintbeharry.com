@@ -85,8 +85,8 @@ const PILLARS = [
   text: "Deep systems-thinker building the cutting-edge from AI to XR, technically anchored on a degree in computer engineering." }];
 
 const ABOUT_FACTS = [
-{ k: "Disciplines", v: "Product design, systems design, prototyping, research" },
-{ k: "AI Design & Prototyping", v: "Figma, Claude Design, Google Stitch, Protopie, Framer" },
+{ k: "Disciplines", v: "Product Design, Systems Design, Game Design, Prototyping, Research" },
+{ k: "AI Design & Prototyping", v: "Figma, Claude Design, Paper, Google Stitch, Protopie, Framer" },
 { k: "AI Technical & Coding", v: "Claude Code, ChatGPT Codex, Cursor, React, TypeScript, HTML/CSS, Swift, Python, C#" },
 { k: "Recognition", v: <>Two design patents, <a href="https://www.youtube.com/watch?v=lHk6qRHUM9g" target="_blank" rel="noopener">occasional speaker</a></> }];
 
