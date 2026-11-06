@@ -44,7 +44,6 @@ let settle;
 state.whenReady = new Promise(r => { settle = r; });
 
 const say = (msg, bad) => window.onLiveStatus && window.onLiveStatus(msg, bad);
-const short = MODEL.split("/").pop();
 
 /* ---- small numeric helpers, written for a 49k-wide array ---- */
 
@@ -146,7 +145,7 @@ export async function load(){
 
   for(const device of ["webgpu", "wasm"]){
     try{
-      say(`loading ${short} on ${device}`);
+      say(`loading on ${device}`);
       state.tok   = await T.AutoTokenizer.from_pretrained(MODEL, { progress_callback: pc });
       state.model = await T.AutoModelForCausalLM.from_pretrained(MODEL,
                       { dtype: "q4", device, progress_callback: pc });
@@ -154,7 +153,7 @@ export async function load(){
       state.phase  = "ready";
       state.ready  = true;
       state.pct    = 100;
-      say(`${short} · ${device} · running in this tab`);
+      say(`${device} · sampled t=${TEMP} top_p=${TOP_P} · live in this tab`);
       settle(true); return true;
     }catch(e){
       state.error = `${device}: ${e.message}`;

@@ -196,11 +196,13 @@ window.onLiveStatus = (msg, bad)=>{
 
 function boot(){
   if(!DATA){ $("status").innerHTML = '<span style="color:#9B3B2E">runs.js did not load</span>'; return; }
-  PROV = `${DATA.model} · ${DATA.quant} · top ${DATA.top_k} kept · ${DATA.decode.single}`;
+  /* the decode settings belong to whoever is answering, not to the header:
+     the recorded runs used a fixed seed, live generation has none */
+  PROV = `${DATA.model} · ${DATA.quant} · top ${DATA.top_k} kept`;
   /* this classic script runs before the deferred module, so window.LIVE does
      not exist yet and cannot be tested here. State the recorded truth; if a
      live provider is present it overwrites the second line a tick later. */
-  $("status").innerHTML = `${PROV}<br>recorded ${DATA.captured}`;
+  $("status").innerHTML = `${PROV}<br>${DATA.decode.single} · recorded ${DATA.captured}`;
   DATA.single.forEach(r=>{
     const li = document.createElement("li"), b = document.createElement("button");
     b.className = "chip"; b.textContent = r.prompt;
