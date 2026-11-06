@@ -180,18 +180,27 @@ let seq = 0, stepMode = false, gate = null, lastRun = null, totalBits = 0;
 const probs = st => st.cands.map(([w,l]) => [w, st.p * Math.exp(l - st.l)]);
 
 /* ---- boot ---- */
+/* The header carries two lines: what the model is, which never changes, and
+   what it is currently doing, which does. Keeping them separate stops the
+   load state from overwriting the provenance, and stops the page from
+   claiming you can ask it anything while the weights are at 7%. */
+let PROV = "";
 window.onLiveStatus = (msg, bad)=>{
-  $("status").innerHTML = bad
-    ? `<span style="color:#9B3B2E">${msg}</span><br>recorded runs still work`
-    : `${msg}<br>ask it anything`;
-  if(window.LIVE && window.LIVE.ready)
-    $("msg").placeholder = "Ask it anything.";
+  const state = bad ? `<span style="color:#9B3B2E">${msg}</span>` : msg;
+  $("status").innerHTML = PROV ? `${PROV}<br>${state}` : state;
+  const ready = window.LIVE && window.LIVE.ready;
+  $("msg").placeholder = ready
+    ? "Ask it anything."
+    : bad ? "Pick a question above." : "Ask it anything. It will wait for the weights.";
 };
 
 function boot(){
   if(!DATA){ $("status").innerHTML = '<span style="color:#9B3B2E">runs.js did not load</span>'; return; }
-  $("status").innerHTML = `${DATA.model} · ${DATA.quant} · top ${DATA.top_k} kept<br>` +
-    `${DATA.decode.single} · recorded ${DATA.captured}`;
+  PROV = `${DATA.model} · ${DATA.quant} · top ${DATA.top_k} kept · ${DATA.decode.single}`;
+  /* this classic script runs before the deferred module, so window.LIVE does
+     not exist yet and cannot be tested here. State the recorded truth; if a
+     live provider is present it overwrites the second line a tick later. */
+  $("status").innerHTML = `${PROV}<br>recorded ${DATA.captured}`;
   DATA.single.forEach(r=>{
     const li = document.createElement("li"), b = document.createElement("button");
     b.className = "chip"; b.textContent = r.prompt;
