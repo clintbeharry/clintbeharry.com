@@ -338,42 +338,71 @@ function attachInspect(tok, st){
 const ord = n => n + (["th","st","nd","rd"][n % 10 > 3 || (n % 100 - n % 10) === 10 ? 0 : n % 10]);
 
 /* ---- input ---- */
+
+/* a quiet line inside a turn, for waiting and for failure */
+function note(turn, text){
+  const p = Object.assign(document.createElement("p"),
+    { className:"said", textContent:text });
+  p.style.color = "var(--dim)";
+  turn.appendChild(p); scroll(); return p;
+}
+
 async function ask(text){
   const run = DATA ? findRun(text) : null;
   addTurn("user", "you").appendChild(
     Object.assign(document.createElement("p"), { className:"said", textContent:text }));
 
-  /* anything not in the recorded set is generated here and now */
-  if(!run && window.LIVE && window.LIVE.ready){
-    const turn = addTurn("bot", "thinking\u2026");
-    scroll();
-    try{
-      const steps = await window.liveGenerate(text);
-      turn.querySelector(".who").textContent = "SmolLM2-360M-Instruct · live";
-      lastRun = { prompt:text, steps };
-      play(lastRun, turn);
-    }catch(e){
-      turn.querySelector(".who").textContent = "failed";
-      const p = Object.assign(document.createElement("p"),
-        { className:"said", textContent:"generation failed: " + e.message });
-      p.style.color = "var(--dim)";
-      turn.appendChild(p);
-    }
+  /* a recorded question plays straight from the capture, which is instant */
+  if(run){
+    lastRun = run;
+    play(run, addTurn("bot", DATA.model));
+    scroll(); return;
+  }
+
+  /* anything else is generated here, in this tab. three states, and the
+     difference between them matters: a question typed during the download
+     used to be turned away as though the model had failed. now it waits. */
+  const L = window.LIVE;
+  const turn = addTurn("bot", L && L.ready ? "thinking\u2026" : "waiting for the weights");
+  scroll();
+
+  if(!L){
+    turn.querySelector(".who").textContent = DATA.model;
+    note(turn, "No live model on this page, so only the recorded questions above " +
+               "work here. A published artifact blocks the network the weights " +
+               "arrive through. The hosted copy does not.");
     return;
   }
 
-  if(!run){
-    const t = addTurn("bot", DATA.model);
-    const p = Object.assign(document.createElement("p"),
-      { className:"said", textContent:
-        "The model has not loaded in this tab, so only the recorded questions above " +
-        "work here. Published artifacts block the network the weights come through." });
-    p.style.color = "var(--dim)";
-    t.appendChild(p); scroll(); return;
+  if(!L.ready){
+    const p = note(turn, "");
+    const tick = setInterval(()=>{
+      if(L.phase !== "loading") return;
+      p.textContent = `Downloading the model, ${L.pct}% of ${L.file}. About 300MB, `
+        + `cached after the first visit. Your question runs the moment it lands.`;
+    }, 150);
+    const ok = await L.whenReady;
+    clearInterval(tick);
+    if(!ok){
+      turn.querySelector(".who").textContent = "could not load";
+      p.textContent = (L.error || "the model would not load") +
+        ". The recorded questions above still work.";
+      return;
+    }
+    p.remove();
+    turn.querySelector(".who").textContent = "thinking\u2026";
   }
-  lastRun = run;
-  play(run, addTurn("bot", DATA.model));
-  scroll();
+
+  try{
+    const steps = await window.liveGenerate(text);
+    if(!steps.length){ note(turn, "the model stopped before saying anything"); return; }
+    turn.querySelector(".who").textContent = `${DATA.model} \u00b7 live \u00b7 ${L.device}`;
+    lastRun = { prompt:text, steps };
+    play(lastRun, turn);
+  }catch(e){
+    turn.querySelector(".who").textContent = "failed";
+    note(turn, "generation failed: " + e.message);
+  }
 }
 
 $("msg").addEventListener("keydown", e=>{
