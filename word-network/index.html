@@ -394,7 +394,14 @@ async function ask(text){
   }
 
   try{
-    const steps = await window.liveGenerate(text);
+    /* one forward pass per word, so the reply takes real time. the count is
+       the only honest progress indicator: there is no way to know how many
+       words are coming until the model emits its end-of-turn marker. */
+    const who = turn.querySelector(".who");
+    const steps = await window.liveGenerate(text, undefined, (st, all)=>{
+      who.textContent = `thinking\u2026 ${all.length} words, `
+        + `${all.reduce((a,b)=>a+b.bits,0).toFixed(1)} bits`;
+    });
     if(!steps.length){ note(turn, "the model stopped before saying anything"); return; }
     turn.querySelector(".who").textContent = `${DATA.model} \u00b7 live \u00b7 ${L.device}`;
     lastRun = { prompt:text, steps };
