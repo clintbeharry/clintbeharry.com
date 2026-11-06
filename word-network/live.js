@@ -25,7 +25,10 @@ const CDN   = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.2";
 const TOP_K   = 24;    /* candidates kept per step, matching the recorded runs */
 const TEMP    = 0.7;   /* same decode settings as the recorded replies, so the */
 const TOP_P   = 0.92;  /* live ones hesitate in the same way */
-const NUCLEUS = 256;   /* shortlist for sampling only. 0.92 never reaches this far */
+const NUCLEUS = 256;
+
+/* kept identical to the capture script's SYSTEM */
+const SYSTEM = "You are a helpful assistant.";   /* shortlist for sampling only. 0.92 never reaches this far */
 
 /* A flat cap cuts the reply wherever the counter runs out, which reads as a
    broken page rather than a finished thought: "divisors: 1 and itself. For
@@ -189,10 +192,17 @@ export async function generate(text, maxNew = MAX_NEW, onStep){
   const i64 = a => new T.Tensor("int64", BigInt64Array.from(a, v => BigInt(v)), [1, a.length]);
   const ones = n => i64(new Array(n).fill(1));
 
+  /* The system message is sent explicitly. Left out, the chat template
+     silently inserts the model's own default, which names its maker, and a
+     small model that wanders onto a low-confidence branch will reach into
+     that line and address it as though it were the person asking. The
+     recorded runs are conditioned with this exact string, so a live reply
+     and a recorded one start from the same place. */
   let prompt;
   try{
-    prompt = tok.apply_chat_template([{ role:"user", content:text }],
-               { add_generation_prompt:true, tokenize:false });
+    prompt = tok.apply_chat_template(
+      [{ role:"system", content:SYSTEM }, { role:"user", content:text }],
+      { add_generation_prompt:true, tokenize:false });
   }catch{ prompt = text; }
 
   const enc = await tok(prompt, { add_special_tokens:false });
