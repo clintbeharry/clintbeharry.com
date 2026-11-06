@@ -23,10 +23,23 @@ const MODEL = "HuggingFaceTB/SmolLM2-360M-Instruct";
 const CDN   = "https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.2";
 
 const TOP_K   = 24;    /* candidates kept per step, matching the recorded runs */
-const MAX_NEW = 48;
 const TEMP    = 0.7;   /* same decode settings as the recorded replies, so the */
 const TOP_P   = 0.92;  /* live ones hesitate in the same way */
 const NUCLEUS = 256;   /* shortlist for sampling only. 0.92 never reaches this far */
+
+/* A flat cap cuts the reply wherever the counter runs out, which reads as a
+   broken page rather than a finished thought: "divisors: 1 and itself. For
+   example". So: let it run to the first sentence it finishes after MIN_NEW,
+   and keep MAX_NEW only as a backstop for a model that will not land one.
+   The aim is not a longer reply, it is a reply that ends. */
+const MIN_NEW = 20;
+const MAX_NEW = 88;
+
+/* A sentence end, but not a decimal point or a numbered list marker. Tested
+   against the whole reply so far, because the full stop is often its own
+   token and arrives separately from the word before it. */
+const endsSentence = text =>
+  /[.!?]["')\]]?\s*$/.test(text) && !/\d[.]\s*$/.test(text) && !/\b[A-Za-z][.]\s*$/.test(text);
 
 const state = {
   phase: "loading",    /* loading · ready · failed */
@@ -202,16 +215,20 @@ export async function generate(text, maxNew = MAX_NEW, onStep){
 
     const chosen = sample(logits);
     const piece  = tok.decode([chosen], { skip_special_tokens:false });
-    const stop   = chosen === EOS || (piece.startsWith("<|") && piece.endsWith("|>"));
+    /* the model's own end of turn: it decided it was finished */
+    let stop = chosen === EOS || (piece.startsWith("<|") && piece.endsWith("|>"));
 
     if(!stop){
       const step = measure(logits, chosen, piece, tok);
       steps.push(step);
       if(onStep) try{ onStep(step, steps); }catch{}
+      /* otherwise, let it finish the sentence it is in and stop there */
+      if(steps.length >= MIN_NEW && endsSentence(steps.map(x => x.tok).join("")))
+        stop = true;
     }
 
     /* the previous cache has been read by this pass and can go. on webgpu
-       these are real buffers, and 48 steps of them is not free. */
+       these are real buffers, and ninety steps of them is not free. */
     if(prev) for(const k in prev) try{ prev[k].dispose(); }catch{}
     try{ out.logits.dispose(); }catch{}
     if(stop || s === maxNew - 1){
