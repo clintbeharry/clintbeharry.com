@@ -112,6 +112,21 @@ header{display:flex;justify-content:space-between;align-items:baseline;gap:16px;
 .tok.set:hover .word{color:var(--clay)}
 .tok.sel .word{color:var(--clay);font-weight:500}
 
+/* A word the person typed. The field under it is what the model expected
+   there instead, and it sinks away because what they wrote overrules it.
+   The clay underline carries how much that word surprised the model: no line
+   means it had already guessed it, a bright one means it had not. */
+.tok.given .word{box-shadow:inset 0 -1px 0 0 rgba(217,119,87,var(--surprise,0))}
+.fan.sink i:not(.keep){transform:translateY(9px);opacity:0;
+  transition:transform .45s cubic-bezier(.3,0,.2,1),opacity .4s ease}
+
+/* the bubble breaks apart and its words rejoin the one sequence the model
+   actually reads. the two-sided thread was always a surface over this. */
+.turn.user .said{transition:opacity .4s ease,transform .45s cubic-bezier(.4,0,1,1)}
+.turn.user.gone .said{opacity:0;transform:translateY(-6px) scale(.97)}
+.turn.user.gone{margin-bottom:0;max-height:0;overflow:hidden;
+  transition:max-height .45s cubic-bezier(.4,0,.2,1),margin-bottom .45s ease}
+
 /* the field hangs below the word it belongs to */
 .fan{position:absolute;left:50%;transform:translateX(-50%);top:calc(100% + var(--gap));
   display:flex;flex-direction:column;align-items:center;white-space:pre;pointer-events:none}
@@ -313,9 +328,16 @@ function addTurn(role, who){
 const scroll = ()=> $("thread").scrollTop = $("thread").scrollHeight;
 
 /* ---- one word ---- */
-function buildTok(st, idx, onPick){
+function buildTok(st, idx, onPick, given){
   const tok = document.createElement("span");
-  tok.className = "tok";
+  tok.className = given ? "tok given" : "tok";
+  if(given){
+    /* 12 bits is about the point past which the model plainly had no idea.
+       A floor keeps a hairline under every word the person typed, so a still
+       frame still shows whose words are whose: the model's carry none. */
+    tok.style.setProperty("--surprise",
+      clamp(.2 + (st.bits / 12) * .8, .2, 1).toFixed(2));
+  }
   tok.dataset.i = idx;
 
   const word = document.createElement("span");
@@ -328,9 +350,12 @@ function buildTok(st, idx, onPick){
      how little they were worth instead of hiding them. */
   const P = probs(st);
   const field = P.slice(0, FAN_N);
-  /* the word taken must be in the field, even when it was a long shot */
+  /* The word taken must be in the field, even when it was a long shot. But a
+     word the PERSON typed is not forced in: the model ranked "grass" 250th
+     here, and dropping it into the sixth slot would invent a rank it never
+     had. If it is absent, the model simply did not see that word coming. */
   let wi = field.findIndex(([w]) => w === st.tok);
-  if(wi < 0){ field.pop(); field.push([st.tok, st.p]); wi = field.length - 1; }
+  if(wi < 0 && !given){ field.pop(); field.push([st.tok, st.p]); wi = field.length - 1; }
   const clip = w => w.length > MAX_CH ? w.slice(0, MAX_CH - 1) + "\u2026" : w;
   /* the sentence spaces itself out so each field has somewhere to sit */
   const widest = Math.max(st.tok.length, ...field.map(([w]) => clip(w).length));
@@ -353,8 +378,8 @@ function buildTok(st, idx, onPick){
 }
 
 /* ---- play a reply ---- */
-async function play(run, turn){
-  const my = ++seq;
+/* One lane, opened once and written into from both directions. */
+function openStream(turn){
   turn.classList.remove("waiting");   /* the mark stops breathing */
   const p = document.createElement("p");
   p.className = "reply";
@@ -362,56 +387,125 @@ async function play(run, turn){
   const caret = document.createElement("span");
   caret.className = "caret";
   p.appendChild(caret);
+  return { p, caret };
+}
 
-  totalBits = 0;
-  $("replay").disabled = true;
+function restFan(fan, wi){
+  fan.classList.remove("in","out","sink");
+  fan.classList.add("rest");
+  [...fan.children].forEach((el,k)=>{ if(k !== wi && k < 4) el.classList.add("keep"); });
+}
 
-  for(let i = 0; i < run.steps.length; i++){
-    if(my !== seq) return;
-    const st = run.steps[i];
-    const { tok, fan, word, wi } = buildTok(st, i, null);
-    p.insertBefore(tok, caret);
+/* The words the person gave. The field under each is what the model expected
+   there instead, and it sinks away: what they typed overrules it. Where the
+   model had already guessed the word, it stays lit in the field as it sinks. */
+async function playGiven(ctx, given, my){
+  for(let i = 0; i < given.length; i++){
+    if(my !== seq) return false;
+    const st = given[i];
+    const { tok, fan, wi } = buildTok(st, i, null, true);
+    ctx.p.insertBefore(tok, ctx.caret);
+    tok.classList.add("set");          /* a typed word arrives already settled */
+    attachInspect(tok, st);
+
+    fan.classList.add("in");
+    await sleep(T_FAN);
+    if(my !== seq) return false;
+    /* shorter than the reply's dwell: these are not decisions, they are
+       already facts, and the beat only has to be long enough to read */
+    await sleep(stepMode ? 170 : clamp(st.bits * 52, 70, 330));
+    if(my !== seq) return false;
+
+    fan.classList.add("sink");
+    await sleep(190);
+    if(my !== seq) return false;
+    restFan(fan, wi);
+    scroll();
+  }
+  return true;
+}
+
+/* The words the model chose. Same field, opposite motion: nothing overrules
+   it here, so the one it took rises out of the field and into the line. */
+async function playSteps(ctx, steps, my){
+  for(let i = 0; i < steps.length; i++){
+    if(my !== seq) return false;
+    const st = steps[i];
+    const { tok, fan, wi } = buildTok(st, i, null);
+    ctx.p.insertBefore(tok, ctx.caret);
     totalBits += st.bits;
     $("bits").textContent = totalBits.toFixed(1);
     attachInspect(tok, st);
 
     if(stepMode){ $("next").disabled = false; await waitGate(); $("next").disabled = true; }
-    if(my !== seq) return;
+    if(my !== seq) return false;
 
-    /* the field opens */
     fan.classList.add("in");
     await sleep(T_FAN);
-    if(my !== seq) return;
+    if(my !== seq) return false;
 
     /* held open in proportion to the doubt: a word the model was sure of barely
        pauses, an uncertain one stays long enough to read its field */
     await sleep(stepMode ? 240 : clamp(st.bits * 170, 0, 700));
-    if(my !== seq) return;
+    if(my !== seq) return false;
 
-    /* the one it took lifts into the sentence */
     const win = fan.children[wi];
     win.style.setProperty("--dy", `-${win.offsetTop}px`);
     win.classList.add("rise");
     fan.classList.add("out");
     await sleep(T_RISE - 60);
-    if(my !== seq) return;
+    if(my !== seq) return false;
     tok.classList.add("set");
     await sleep(60);
 
-    /* a trace of the field stays behind */
-    fan.classList.remove("in","out");
-    fan.classList.add("rest");
+    restFan(fan, wi);
     win.classList.remove("rise");
-    [...fan.children].forEach((el,k)=>{ if(k !== wi && k < 4) el.classList.add("keep"); });
     scroll();
   }
+  return true;
+}
 
+function closeStream(ctx, my){
   if(my !== seq) return;
-  caret.remove();
-  p.classList.add("done");
+  ctx.caret.remove();
+  ctx.p.classList.add("done");
   $("replay").disabled = false;
   $("next").disabled = true;
   scroll();
+}
+
+/* the bubble breaks apart and its words rejoin the sequence */
+async function dissolve(userTurn){
+  if(!userTurn) return;
+  userTurn.style.maxHeight = userTurn.offsetHeight + "px";
+  await sleep(20);
+  userTurn.classList.add("gone");
+  await sleep(430);
+  userTurn.remove();
+}
+
+async function play(run, turn, userTurn){
+  const my = ++seq;
+  const ctx = openStream(turn);
+  totalBits = 0;
+  $("replay").disabled = true;
+
+  if(run.given && run.given.length){
+    /* The lane opens with the person's own words, so the model's name cannot
+       sit over all of it. The label narrates instead: reading, then writing.
+       It is the same pass either way, which is the whole point. */
+    const who = turn.querySelector(".who");
+    const writing = who.textContent;
+    who.textContent = "reading your message";
+    await sleep(520);                 /* the beat, before the surface opens */
+    if(my !== seq) return;
+    await dissolve(userTurn);
+    if(my !== seq) return;
+    if(!await playGiven(ctx, run.given, my)) return;
+    who.textContent = writing;
+  }
+  if(!await playSteps(ctx, run.steps, my)) return;
+  closeStream(ctx, my);
 }
 
 function waitGate(){ return new Promise(r => { gate = r; }); }
@@ -448,13 +542,14 @@ function note(turn, text){
 
 async function ask(text){
   const run = DATA ? findRun(text) : null;
-  addTurn("user", "you").appendChild(
+  const userTurn = addTurn("user", "you");
+  userTurn.appendChild(
     Object.assign(document.createElement("p"), { className:"said", textContent:text }));
 
   /* a recorded question plays straight from the capture, which is instant */
   if(run){
     lastRun = run;
-    play(run, addTurn("bot", DATA.model));
+    play(run, addTurn("bot", DATA.model), userTurn);
     scroll(); return;
   }
 
@@ -498,14 +593,17 @@ async function ask(text){
        the only honest progress indicator: there is no way to know how many
        words are coming until the model emits its end-of-turn marker. */
     const who = turn.querySelector(".who");
-    const steps = await window.liveGenerate(text, undefined, (st, all)=>{
-      who.textContent = `thinking\u2026 ${all.length} words, `
-        + `${all.reduce((a,b)=>a+b.bits,0).toFixed(1)} bits`;
-    });
+    let given = null;
+    const steps = await window.liveGenerate(text, undefined,
+      (st, all)=>{
+        who.textContent = `thinking\u2026 ${all.length} words, `
+          + `${all.reduce((a,b)=>a+b.bits,0).toFixed(1)} bits`;
+      },
+      g => { given = g; });        /* arrives as soon as prefill is done */
     if(!steps.length){ note(turn, "the model stopped before saying anything"); return; }
     turn.querySelector(".who").textContent = `${DATA.model} \u00b7 live \u00b7 ${L.device}`;
-    lastRun = { prompt:text, steps };
-    play(lastRun, turn);
+    lastRun = { prompt:text, given, steps };
+    play(lastRun, turn, userTurn);
   }catch(e){
     turn.querySelector(".who").textContent = "failed";
     note(turn, "generation failed: " + e.message);

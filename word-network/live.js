@@ -183,7 +183,25 @@ export async function load(){
 /* ---- generate ----
    onStep, if given, is called with each position the moment it is known, so
    the page can start animating while the rest is still being computed. */
-export async function generate(text, maxNew = MAX_NEW, onStep){
+/* Where the person's own words sit inside the templated prompt. Everything
+   else in there is scaffolding the model needs and the reader does not. */
+async function userSpan(tok, ids){
+  const head = tok.apply_chat_template([{ role:"system", content:SYSTEM }],
+                 { add_generation_prompt:false, tokenize:false });
+  const headN = (await tok(head, { add_special_tokens:false })).input_ids.data.length;
+  const openN = (await tok("<|im_start|>user\n", { add_special_tokens:false }))
+                  .input_ids.data.length;
+  const endId = Number((await tok("<|im_end|>", { add_special_tokens:false }))
+                  .input_ids.data[0]);
+  const start = headN + openN;
+  let end = start;
+  while(end < ids.length && ids[end] !== endId) end++;
+  return { start, end };
+}
+
+/* onPrompt fires once prefill is done, with a field under each word the
+   person typed; onStep fires per generated word. */
+export async function generate(text, maxNew = MAX_NEW, onStep, onPrompt){
   if(!state.ready) throw new Error("the model is not loaded");
   const { tok, model, T } = state;
   const L   = model.config.num_hidden_layers;
@@ -207,6 +225,7 @@ export async function generate(text, maxNew = MAX_NEW, onStep){
 
   const enc = await tok(prompt, { add_special_tokens:false });
   const ids = Array.from(enc.input_ids.data, Number);
+  const span = onPrompt ? await userSpan(tok, ids) : null;
 
   /* the prompt goes through in one pass; every word after it costs one pass */
   let feeds = { input_ids: i64(ids), attention_mask: ones(ids.length),
@@ -222,6 +241,22 @@ export async function generate(text, maxNew = MAX_NEW, onStep){
     const V = out.logits.dims[2], rows = out.logits.dims[1], off = (rows - 1) * V;
     const d = out.logits.data;
     const logits = d.subarray ? d.subarray(off, off + V) : d.slice(off, off + V);
+
+    /* Prefill predicted at EVERY position, not just the last, and those rows
+       are normally thrown away. Row j-1 holds what the model expected at the
+       person's word j: the same field the reply gets, except that what they
+       actually typed overrides it. Reading the question and writing the answer
+       are one process; only who gets overruled changes. */
+    if(s === 0 && onPrompt){
+      const given = [];
+      for(let j = span.start; j < span.end; j++){
+        const o = (j - 1) * V;
+        const row = d.subarray ? d.subarray(o, o + V) : d.slice(o, o + V);
+        given.push(measure(row, ids[j],
+                           tok.decode([ids[j]], { skip_special_tokens:false }), tok));
+      }
+      try{ onPrompt(given); }catch{}
+    }
 
     const chosen = sample(logits);
     const piece  = tok.decode([chosen], { skip_special_tokens:false });
