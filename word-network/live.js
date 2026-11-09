@@ -234,6 +234,7 @@ export async function generate(text, maxNew = MAX_NEW, onStep, onPrompt){
   let prev = null;
   const steps = [];
 
+  const t0 = performance.now();
   for(let s = 0; s < maxNew; s++){
     const out = await model.forward(feeds);
 
@@ -255,7 +256,10 @@ export async function generate(text, maxNew = MAX_NEW, onStep, onPrompt){
         given.push(measure(row, ids[j],
                            tok.decode([ids[j]], { skip_special_tokens:false }), tok));
       }
-      try{ onPrompt(given); }catch{}
+      /* how long that one pass took, against the ~180ms each single word of
+         the reply will cost. the whole question is read in less time than one
+         word is written, which is the difference between prefill and decode. */
+      try{ onPrompt(given, { ms: Math.round(performance.now() - t0), n: given.length }); }catch{}
     }
 
     const chosen = sample(logits);
