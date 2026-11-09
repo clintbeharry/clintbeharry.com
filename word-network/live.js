@@ -183,6 +183,8 @@ export async function load(){
 /* ---- generate ----
    onStep, if given, is called with each position the moment it is known, so
    the page can start animating while the rest is still being computed. */
+const MAX_SEEDS = 16;   /* each one costs a pass over prompt+reply */
+
 /* Where the person's own words sit inside the templated prompt. Everything
    else in there is scaffolding the model needs and the reader does not. */
 async function userSpan(tok, ids){
@@ -199,9 +201,58 @@ async function userSpan(tok, ids){
   return { start, end };
 }
 
-/* onPrompt fires once prefill is done, with a field under each word the
-   person typed; onStep fires per generated word. */
-export async function generate(text, maxNew = MAX_NEW, onStep, onPrompt){
+/* How much each of the person's words actually seeded the answer, and which
+   words of the answer it is responsible for.
+
+   This is measured, not inferred: take one of their words out, run the real
+   reply back through, and see how much less likely the model finds its own
+   words without it. Attention weights would be the obvious thing to show, but
+   this ONNX graph exports only logits and the cache, and leave-one-out is the
+   stronger claim anyway. It is causal. An attention weight is a correlate.
+
+   Scoring the first token alone does not work: the opening word of a reply is
+   almost pure syntax, so everything appears to "push toward" A and An. The
+   question worth asking is which words of the ANSWER depend on this word. */
+async function seedInfluence(model, tok, promptIds, reply, span, fwd, free){
+  const seq = promptIds.concat(reply), P = promptIds.length;
+  const lp = (d, off, V, id) => {
+    let m = -Infinity;
+    for(let i = 0; i < V; i++){ const v = d[off+i]; if(v > m) m = v; }
+    let S = 0;
+    for(let i = 0; i < V; i++){ const z = d[off+i] - m; if(z > -40) S += Math.exp(z); }
+    return d[off+id] - m - Math.log(S);
+  };
+
+  const o0 = await fwd(seq);
+  const V = o0.logits.dims[2], d0 = o0.logits.data;
+  const base = reply.map((t, k) => lp(d0, (P - 1 + k) * V, V, t));
+  free(o0);
+
+  const last = Math.min(span.end, span.start + MAX_SEEDS);
+  const seeds = [];
+  for(let j = span.start; j < last; j++){
+    const o = await fwd(seq.slice(0, j).concat(seq.slice(j + 1)));
+    const d = o.logits.data;
+    /* one token shorter, so the same reply word sits one position earlier */
+    const drop = reply.map((t, k) => base[k] - lp(d, (P - 2 + k) * V, V, t));
+    free(o);
+    const order = drop.map((v, k) => [v, k]).sort((a, b) => b[0] - a[0]);
+    seeds.push({
+      tok: tok.decode([seq[j]], { skip_special_tokens:false }),
+      pull: +drop.reduce((a, b) => a + b, 0).toFixed(3),
+      /* the answer's words that lean on this one */
+      put: order.slice(0, 4).filter(([v]) => v > 0.05).map(([, k]) => reply[k]),
+    });
+  }
+  const top = Math.max(...seeds.map(x => x.pull), 1e-6);
+  seeds.forEach(x => { x.share = +(x.pull / top).toFixed(3);
+                       x.put = x.put.map(t => tok.decode([t], { skip_special_tokens:false })); });
+  return seeds;
+}
+
+/* onSeeds fires after the reply exists, since the measurement needs it;
+   onStep fires per generated word. */
+export async function generate(text, maxNew = MAX_NEW, onStep, onSeeds){
   if(!state.ready) throw new Error("the model is not loaded");
   const { tok, model, T } = state;
   const L   = model.config.num_hidden_layers;
@@ -225,7 +276,7 @@ export async function generate(text, maxNew = MAX_NEW, onStep, onPrompt){
 
   const enc = await tok(prompt, { add_special_tokens:false });
   const ids = Array.from(enc.input_ids.data, Number);
-  const span = onPrompt ? await userSpan(tok, ids) : null;
+  const span = onSeeds ? await userSpan(tok, ids) : null;
 
   /* the prompt goes through in one pass; every word after it costs one pass */
   let feeds = { input_ids: i64(ids), attention_mask: ones(ids.length),
@@ -233,6 +284,7 @@ export async function generate(text, maxNew = MAX_NEW, onStep, onPrompt){
   let pos = ids.length;
   let prev = null;
   const steps = [];
+  const replyIds = [];   /* the ids as chosen: re-tokenising the text would not round-trip */
 
   const t0 = performance.now();
   for(let s = 0; s < maxNew; s++){
@@ -243,25 +295,6 @@ export async function generate(text, maxNew = MAX_NEW, onStep, onPrompt){
     const d = out.logits.data;
     const logits = d.subarray ? d.subarray(off, off + V) : d.slice(off, off + V);
 
-    /* Prefill predicted at EVERY position, not just the last, and those rows
-       are normally thrown away. Row j-1 holds what the model expected at the
-       person's word j: the same field the reply gets, except that what they
-       actually typed overrides it. Reading the question and writing the answer
-       are one process; only who gets overruled changes. */
-    if(s === 0 && onPrompt){
-      const given = [];
-      for(let j = span.start; j < span.end; j++){
-        const o = (j - 1) * V;
-        const row = d.subarray ? d.subarray(o, o + V) : d.slice(o, o + V);
-        given.push(measure(row, ids[j],
-                           tok.decode([ids[j]], { skip_special_tokens:false }), tok));
-      }
-      /* how long that one pass took, against the ~180ms each single word of
-         the reply will cost. the whole question is read in less time than one
-         word is written, which is the difference between prefill and decode. */
-      try{ onPrompt(given, { ms: Math.round(performance.now() - t0), n: given.length }); }catch{}
-    }
-
     const chosen = sample(logits);
     const piece  = tok.decode([chosen], { skip_special_tokens:false });
     /* the model's own end of turn: it decided it was finished */
@@ -269,7 +302,7 @@ export async function generate(text, maxNew = MAX_NEW, onStep, onPrompt){
 
     if(!stop){
       const step = measure(logits, chosen, piece, tok);
-      steps.push(step);
+      steps.push(step); replyIds.push(chosen);
       if(onStep) try{ onStep(step, steps); }catch{}
       /* otherwise, let it finish the sentence it is in and stop there */
       if(steps.length >= MIN_NEW && endsSentence(steps.map(x => x.tok).join("")))
@@ -306,6 +339,19 @@ export async function generate(text, maxNew = MAX_NEW, onStep, onPrompt){
     feeds = { input_ids: i64([chosen]), attention_mask: ones(pos + 1),
               position_ids: i64([pos]), past_key_values: past };
     pos++;
+  }
+  if(onSeeds && span && steps.length){
+    const fwd  = x => model.forward({ input_ids:i64(x), attention_mask:ones(x.length),
+                                      position_ids:i64(x.map((_, k) => k)) });
+    const free = o => { try{ o.logits.dispose(); }catch{}
+      for(let i = 0; i < L; i++) try{
+        o[`present.${i}.key`].dispose(); o[`present.${i}.value`].dispose();
+      }catch{} };
+    try{
+      const t = performance.now();
+      const seeds = await seedInfluence(model, tok, ids, replyIds, span, fwd, free);
+      onSeeds(seeds, { ms: Math.round(performance.now() - t), passes: seeds.length + 1 });
+    }catch(e){ onSeeds(null, { error: e.message }); }
   }
   return steps;
 }

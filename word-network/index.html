@@ -95,6 +95,10 @@ header{display:flex;justify-content:space-between;align-items:baseline;gap:16px;
      which opened a dead gap under the model's name. pull that half back. */
   margin:calc((1.5em - var(--band)) / 2) 0 0;
   white-space:pre-wrap;word-break:break-word}
+/* With a seed row above it, the reply is no longer the first thing under the
+   label, so the pull-up that closed that gap now drags it into the seeds. */
+.seeds + .reply{margin-top:0}
+
 /* once finished, the band shrinks to just what the leftover traces need */
 .reply.done{--band:calc(var(--gap) + 5.4 * var(--row));
   transition:line-height .55s cubic-bezier(.3,0,.2,1),
@@ -120,12 +124,21 @@ header{display:flex;justify-content:space-between;align-items:baseline;gap:16px;
 .fan.sink i:not(.keep){transform:translateY(9px);opacity:0;
   transition:transform .45s cubic-bezier(.3,0,.2,1),opacity .4s ease}
 
-/* the bubble breaks apart and its words rejoin the one sequence the model
-   actually reads. the two-sided thread was always a surface over this. */
-.turn.user .said{transition:opacity .4s ease,transform .45s cubic-bezier(.4,0,1,1)}
-.turn.user.gone .said{opacity:0;transform:translateY(-6px) scale(.97)}
-.turn.user.gone{margin-bottom:0;max-height:0;overflow:hidden;
-  transition:max-height .45s cubic-bezier(.4,0,.2,1),margin-bottom .45s ease}
+/* the bubble stays put. copies of its words travel left and seed the reply. */
+.said w{display:inline;transition:opacity .5s ease}
+.turn.user.sent .said w{opacity:.45}
+
+.seeds{position:relative;margin:0 0 6px;white-space:pre-wrap;word-break:break-word;
+  line-height:calc(var(--gap) + 5.2 * var(--row));
+  min-height:calc(var(--gap) + 5.2 * var(--row))}
+.seeds .tok{opacity:0}
+.seeds .tok.flew{opacity:1;transition:transform .62s cubic-bezier(.22,1,.36,1),opacity .3s ease}
+/* weight by how much the word actually moved the answer */
+.seeds .word{color:#fff;opacity:calc(.3 + .7 * var(--share,0))}
+.seeds .tok.dead .word{opacity:.22;text-decoration:line-through;
+  text-decoration-color:rgba(255,255,255,.3)}
+.seeds .fan i{color:var(--clay)}
+.seedcap{font-family:var(--mono);font-size:10.5px;color:var(--dimmer);margin:0 0 4px}
 
 /* the field hangs below the word it belongs to */
 .fan{position:absolute;left:50%;transform:translateX(-50%);top:calc(100% + var(--gap));
@@ -348,7 +361,7 @@ function buildTok(st, idx, onPick, given){
   /* every word shows its field, however sure the model was. a confident word's
      alternatives are all under a percent, so there is no floor; opacity carries
      how little they were worth instead of hiding them. */
-  const P = probs(st);
+  const P = st.put ? st.put.map(w => [w, 1]) : probs(st);
   const field = P.slice(0, FAN_N);
   /* The word taken must be in the field, even when it was a long shot. But a
      word the PERSON typed is not forced in: the model ranked "grass" 250th
@@ -396,36 +409,54 @@ function restFan(fan, wi){
   [...fan.children].forEach((el,k)=>{ if(k !== wi && k < 4) el.classList.add("keep"); });
 }
 
-/* The words the person gave. Their fields open ALL AT ONCE, because that is
-   what happens: prefill is a single forward pass over the whole message, and
-   every position is scored in parallel. Walking them left to right would
-   dramatise a sequential read that does not occur. The reply below opens one
-   word at a time, because each of those really does cost its own pass. The
-   difference in timing is the difference between prefill and decode. */
-async function playGiven(ctx, given, my){
-  const built = given.map((st, i) => {
+/* Copies of the person's words travel from the bubble into the reply's lane.
+   Each one is weighted by how much it actually seeded the answer, measured by
+   removing it and re-scoring the real reply. A word that changed nothing is
+   struck through: "a" in "What is a prime number?" carries literally none of
+   it, and the page should say so rather than imply every word matters. */
+async function playSeeds(ctx, turn, userTurn, seeds, my){
+  const row = document.createElement("p");
+  row.className = "seeds";
+  ctx.p.parentNode.insertBefore(row, ctx.p);
+
+  const said = userTurn && userTurn.querySelector(".said");
+  const built = seeds.map((sd, i) => {
+    const st = { tok: sd.tok, p: 1, l: 0, rank: 1, bits: 0,
+                 put: sd.put || [], cands: (sd.put || []).map(w => [w, 0]) };
     const b = buildTok(st, i, null, true);
-    ctx.p.insertBefore(b.tok, ctx.caret);
-    b.tok.classList.add("set");      /* a typed word arrives already settled */
-    attachInspect(b.tok, st);
+    b.tok.classList.remove("given");
+    b.tok.style.setProperty("--share", (sd.share || 0).toFixed(2));
+    if(!sd.put || !sd.put.length || sd.share < .02) b.tok.classList.add("dead");
+    b.tok.classList.add("set");
+    row.appendChild(b.tok);
     return b;
   });
-  scroll();
-  if(my !== seq) return false;
-  await sleep(50);
 
-  built.forEach(b => b.fan.classList.add("in"));          /* one pass */
-  await sleep(T_FAN);
+  /* fly each copy from where its original sits in the bubble */
+  const src = said ? [...said.querySelectorAll("w")] : [];
+  built.forEach((b, i) => {
+    const from = src[i] && src[i].getBoundingClientRect();
+    const to = b.tok.getBoundingClientRect();
+    if(from && from.width){
+      b.tok.style.transform =
+        `translate(${(from.left - to.left).toFixed(1)}px, ${(from.top - to.top).toFixed(1)}px)`;
+    }
+  });
+  if(userTurn) userTurn.classList.add("sent");
+  await sleep(30);
+  if(my !== seq) return false;
+  built.forEach((b, i) => setTimeout(()=>{
+    b.tok.classList.add("flew");
+    b.tok.style.transform = "translate(0,0)";
+  }, i * 45));
+  await sleep(620 + built.length * 45);
   if(my !== seq) return false;
 
-  /* held long enough to read the whole field, since it arrived as a block */
-  await sleep(stepMode ? 700 : clamp(620 + given.length * 120, 700, 2300));
+  /* what each word put into the answer */
+  built.forEach(b => b.fan.classList.add("in"));
+  await sleep(T_FAN + 900);
   if(my !== seq) return false;
-
-  built.forEach(b => b.fan.classList.add("sink"));        /* overruled, together */
-  await sleep(220);
-  if(my !== seq) return false;
-  built.forEach(b => restFan(b.fan, b.wi));
+  built.forEach(b => restFan(b.fan, -1));
   scroll();
   return true;
 }
@@ -495,20 +526,13 @@ async function play(run, turn, userTurn){
   totalBits = 0;
   $("replay").disabled = true;
 
-  if(run.given && run.given.length){
-    /* The lane opens with the person's own words, so the model's name cannot
-       sit over all of it. The label narrates instead: reading, then writing.
-       It is the same pass either way, which is the whole point. */
+  if(run.seeds && run.seeds.length){
     const who = turn.querySelector(".who");
     const writing = who.textContent;
-    const m = run.meta;
-    who.textContent = `read all ${run.given.length} of your words in one pass`
-      + (m && m.ms ? ` \u00b7 ${m.ms} ms` : "");
-    await sleep(520);                 /* the beat, before the surface opens */
+    who.textContent = "your words, weighted by what they put in the answer";
+    await sleep(430);
     if(my !== seq) return;
-    await dissolve(userTurn);
-    if(my !== seq) return;
-    if(!await playGiven(ctx, run.given, my)) return;
+    if(!await playSeeds(ctx, turn, userTurn, run.seeds, my)) return;
     who.textContent = writing;
   }
   if(!await playSteps(ctx, run.steps, my)) return;
@@ -539,6 +563,23 @@ const ord = n => n + (["th","st","nd","rd"][n % 10 > 3 || (n % 100 - n % 10) ===
 
 /* ---- input ---- */
 
+/* Re-render the bubble with one <w> per token, so a copy can fly from exactly
+   where its original sits. The tokens concatenate to the text verbatim, so
+   nothing visible changes. */
+function splitBubble(said, seeds){
+  const text = said.textContent;
+  const joined = seeds.map(s => s.tok).join("");
+  if(!text.startsWith(joined)) return;      /* truncated by MAX_SEEDS, leave it */
+  said.textContent = "";
+  for(const sd of seeds){
+    const w = document.createElement("w");
+    w.textContent = sd.tok;
+    said.appendChild(w);
+  }
+  if(text.length > joined.length)
+    said.appendChild(document.createTextNode(text.slice(joined.length)));
+}
+
 /* a quiet line inside a turn, for waiting and for failure */
 function note(turn, text){
   const p = Object.assign(document.createElement("p"),
@@ -550,12 +591,14 @@ function note(turn, text){
 async function ask(text){
   const run = DATA ? findRun(text) : null;
   const userTurn = addTurn("user", "you");
-  userTurn.appendChild(
-    Object.assign(document.createElement("p"), { className:"said", textContent:text }));
+  const said = Object.assign(document.createElement("p"), { className:"said" });
+  said.textContent = text;
+  userTurn.appendChild(said);
 
   /* a recorded question plays straight from the capture, which is instant */
   if(run){
     lastRun = run;
+    if(run.seeds) splitBubble(said, run.seeds);
     play(run, addTurn("bot", DATA.model), userTurn);
     scroll(); return;
   }
@@ -600,16 +643,17 @@ async function ask(text){
        the only honest progress indicator: there is no way to know how many
        words are coming until the model emits its end-of-turn marker. */
     const who = turn.querySelector(".who");
-    let given = null, meta = null;
+    let seeds = null;
     const steps = await window.liveGenerate(text, undefined,
       (st, all)=>{
         who.textContent = `thinking\u2026 ${all.length} words, `
           + `${all.reduce((a,b)=>a+b.bits,0).toFixed(1)} bits`;
       },
-      (g, m) => { given = g; meta = m; });   /* arrives as soon as prefill is done */
+      (sd)=>{ seeds = sd; });     /* measured once the reply exists */
     if(!steps.length){ note(turn, "the model stopped before saying anything"); return; }
     turn.querySelector(".who").textContent = `${DATA.model} \u00b7 live \u00b7 ${L.device}`;
-    lastRun = { prompt:text, given, meta, steps };
+    if(seeds) splitBubble(said, seeds);
+    lastRun = { prompt:text, seeds, steps };
     play(lastRun, turn, userTurn);
   }catch(e){
     turn.querySelector(".who").textContent = "failed";
