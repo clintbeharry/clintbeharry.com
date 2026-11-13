@@ -591,7 +591,7 @@ function PaperWork() {
 
           <section className="leaf leaf-static hero-leaf" id="top">
             <div className="hero-copy">
-              <h1 className="hero-line"><span className="nb">Lead Product Designer</span><span className="nb">for <span className="kw">AI</span> &amp; <span className="kw">Social</span> projects</span></h1>
+              <h1 className="hero-line"><span className="nb">Lead Design Engineer</span><span className="nb">for <span className="kw">AI</span> &amp; <span className="kw">3D</span> projects</span></h1>
               <span className="pnl-impact hero-impact"><svg className="rule" viewBox="-8 -8 16 16" aria-hidden="true"><circle className="mk-dot" r="2" /><circle className="mk-ring" r="8" /><circle className="mk-ring mk-ring2" r="8" /></svg><span className="hi-text"><span className="nb">Led previous companies to</span> <span className="nb">3 acquisitions &amp; 2 spin-outs.</span></span></span>
             </div>
             <div className="hero-meta">
