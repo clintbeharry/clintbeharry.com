@@ -430,6 +430,14 @@ html[data-static] .preel-frame.empty:not(.on) { display: none; }
   border-left-color: color-mix(in oklab, var(--tint-shade) 70%, var(--paper));
   border-right-color: color-mix(in oklab, var(--tint-lit) 70%, var(--paper));
   border-bottom-color: var(--tint-lit); }
+/* the 3D box is the AI box's mirror: lit top/left, shaded bottom/right, so it
+   pushes out of the paper where AI is pressed into it. Same two tones and the
+   same 70% soft edges, just swapped. */
+.hero-line .kw.kw-out {
+  border-top-color: var(--tint-lit);
+  border-left-color: color-mix(in oklab, var(--tint-lit) 70%, var(--paper));
+  border-right-color: color-mix(in oklab, var(--tint-shade) 70%, var(--paper));
+  border-bottom-color: var(--tint-shade); }
 .hero-tag { margin: clamp(14px, 1.6vw, 20px) 0 0; font-size: clamp(15px, 1.4vw, 18px); line-height: 1.5; color: var(--muted); max-width: none; text-wrap: pretty; }
 /* the tagline holds one line only where the hero row has room for it */
 @media (min-width: 1240px) { .hero-tag { white-space: nowrap; text-wrap-style: auto; } }
