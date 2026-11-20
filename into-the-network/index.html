@@ -1109,23 +1109,34 @@ $("send").onclick = submit;
    untouched, because a capture made offline carries real embedding-matrix
    neighbourhoods and this one cannot.
 --------------------------------------------------------------------------- */
+/* The words a question should arrive with, by the rule the page uses now. A
+   recorded question whose words do not match this was captured under an older
+   rule, which is how "What is a prime number?" reached the screen as four
+   words. Checking rather than assuming means a change to how words are found
+   re-records exactly the questions it affects and leaves the rest alone. An
+   offline capture carries neighbourhoods a browser cannot compute, so not
+   overwriting one needlessly is worth the check. */
+const typedWords = t => (t.match(/[A-Za-z][A-Za-z'-]*/g) || []).map(w => w.toLowerCase());
+const stale = g => typedWords(g.prompt).join(" ") !== g.q.map(x => x.w.toLowerCase()).join(" ");
+
 async function captureAll(){
-  /* ?capture        fills in whatever is missing
-     ?capture=all    records everything again, which is what to use after a
-                     change to how the data is built. A question captured
-                     here carries browser-derived neighbourhoods, so an
-                     offline capture of the same question is worth more and
-                     this will overwrite it. */
+  /* ?capture        fills in what is missing, and anything now out of date
+     ?capture=all    records everything again, whatever its state */
   const all = /capture=all/.test(location.search);
   const want = RECORDED.map(g => g.prompt).concat(SUGGEST.filter(s => !findSeed(s)));
-  const todo = all ? want : SUGGEST.filter(s => !findSeed(s));
+  const keep = new Map();
+  if(!all) RECORDED.forEach(g => { if(!stale(g)) keep.set(norm(g.prompt), g); });
+  const todo = want.filter(t => !keep.has(norm(t)));
   const t = turn("bot");
   who(t, "capture mode");
   if(!todo.length){ say(t, "Everything is already recorded."); return; }
-  const note = say(t, "About to capture " + todo.length + " questions. Keep this tab "
-    + "open and awake; it takes a few minutes.");
+  const old = todo.filter(x => RECORDED.some(g => norm(g.prompt) === norm(x)));
+  const note = say(t, "About to capture " + todo.length + " question"
+    + (todo.length === 1 ? "" : "s")
+    + (old.length ? ", " + old.length + " of them recorded already but out of date" : "")
+    + ". Keeping " + keep.size + " as they are. A few minutes; leave this tab open.");
   if(!okToLoad && !(await gate(t, ""))) return;
-  const out = all ? [] : RECORDED.slice();
+  const done = new Map();
   try{
     const m = await provider(msg => note.textContent = "Getting the model, " + msg + ".");
     for(const q of todo){
@@ -1134,11 +1145,13 @@ async function captureAll(){
       const steps = await m.generate(q, undefined, (st, all) => {
         note.textContent = "Capturing: " + q + "  (" + all.length + " words)";
       });
-      out.push({ prompt:q, q:a.q, emerge:m.concepts(steps, a.q.map(x => x.w)),
+      done.set(norm(q), { prompt:q, q:a.q, emerge:m.concepts(steps, a.q.map(x => x.w)),
                  reply:m.toReply(steps), said:m.sayWhat(steps), from:"browser" });
       say(t, "\u2713 " + q + "\n   " + m.sayWhat(steps));
     }
   }catch(e){ note.textContent = "Stopped: " + e.message; return; }
+  /* rebuilt in the order the chips are in, not the order they were captured */
+  const out = want.map(t => done.get(norm(t)) || keep.get(norm(t))).filter(Boolean);
   const js = "window.SEEDS=" + JSON.stringify(out) + ";\n";
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([js], { type:"text/javascript" }));
