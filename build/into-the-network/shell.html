@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Into the network, and out again</title>
+<meta name="description" content="Ask a question and watch a language model answer it: into the word network, across the space it is held in, down into a cursor, and back out a word at a time. Real SmolLM2-360M data, running in your own browser.">
+<link rel="icon" href="../favicon.svg">
+<style>
+/* ---------------------------------------------------------------------------
+   The chat interface people already use, so the machinery underneath maps
+   onto their own experience without being explained. Same tokens as
+   episode one, so the two pages read as one series.
+--------------------------------------------------------------------------- */
+:root{
+  --page:#191919; --surface:#1f1f1f; --raised:#303030;
+  --ink:#ededed; --dim:#ffffff91; --dimmer:#ffffff66;
+  --rule:#ffffff0a; --rule-2:#ffffff14;
+  --clay:#d97757; --clay-hot:#c6613f;
+  --sans:ui-sans-serif,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  --col:1060px;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--page)}
+body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.45;
+  -webkit-font-smoothing:antialiased}
+
+header{display:flex;justify-content:space-between;align-items:baseline;gap:18px;
+  padding:13px 22px;border-bottom:1px solid var(--rule);flex-wrap:wrap}
+.mark{font-size:13px;color:var(--dim)}
+.mark b{color:var(--ink);font-weight:600}
+.mark a{color:var(--dimmer);text-decoration:none;border-bottom:1px solid var(--rule-2)}
+.mark a:hover{color:var(--ink)}
+.status{font-family:var(--mono);font-size:10.5px;color:var(--dimmer);
+  text-align:right;line-height:1.5;max-width:46ch}
+
+.wrap{max-width:var(--col);margin:0 auto;padding:22px 16px 40px}
+h1{font-size:20px;font-weight:600;margin:0 0 8px}
+.lede{color:var(--dim);max-width:76ch;margin:0 0 20px}
+
+/* the question sits in a chat bubble, the way it was typed */
+.thread{min-height:50px;display:flex;justify-content:flex-end;margin:0 0 10px}
+.q{background:var(--raised);border-radius:14px;padding:8px 14px;font-size:15px;
+  line-height:21px;color:var(--ink);max-width:72%;opacity:0;transition:opacity .5s ease}
+.q b{font-weight:400;transition:opacity .45s ease}
+
+.stage{position:relative;border:1px solid var(--rule-2);border-radius:14px;
+  overflow:hidden;background:#161616}
+.stage canvas{display:block;width:100%;height:100%;position:absolute;inset:0}
+.stage .pad{display:block;width:100%}
+#ov{pointer-events:none}
+.hud{position:absolute;left:15px;top:13px;font-family:var(--mono);font-size:11.5px;
+  color:var(--clay);pointer-events:none;letter-spacing:.02em;max-width:70%}
+.hud .sub{color:var(--dimmer);display:block;margin-top:4px;letter-spacing:0;font-size:11px}
+
+/* what the stage says while it has nothing to play */
+.idle{position:absolute;inset:0;display:grid;place-items:center;text-align:center;
+  padding:24px;background:#161616;transition:opacity .4s ease}
+.idle.off{opacity:0;pointer-events:none}
+.idle p{margin:0;color:var(--dimmer);font-size:13.5px;max-width:44ch;line-height:1.6}
+.idle b{display:block;color:var(--dim);font-weight:600;font-size:15px;margin:0 0 7px}
+.idle .pulse{font-family:var(--mono);font-size:11.5px;color:var(--clay);margin-top:11px}
+
+.bar{display:flex;gap:9px;align-items:center;margin:12px 0 0;flex-wrap:wrap}
+.bar button{appearance:none;border:1px solid var(--rule-2);background:#272727;
+  color:var(--dim);font-family:var(--sans);font-size:13px;padding:6px 15px;
+  border-radius:9px;cursor:pointer}
+.bar button:hover:not(:disabled){color:var(--ink);border-color:#ffffff2e}
+.bar button:disabled{opacity:.38;cursor:default}
+.step{font-family:var(--mono);font-size:12px;color:var(--clay);letter-spacing:.02em}
+
+/* the answer, once the sequence has shown how it was built */
+.answer{margin:20px 0 0;max-width:76ch;color:var(--ink);line-height:1.6;
+  opacity:0;transition:opacity .6s ease}
+.answer.in{opacity:1}
+.answer .who{font-family:var(--mono);font-size:11px;color:var(--dimmer);
+  display:flex;align-items:center;gap:9px;margin:0 0 9px}
+.answer .who::before{content:"";width:12px;height:12px;border-radius:50%;
+  background:var(--clay);flex:0 0 auto}
+.answer p{margin:0;color:var(--dim)}
+
+.note{margin:22px 0 0;color:var(--dimmer);font-size:12.5px;max-width:78ch}
+.note b{color:var(--dim);font-weight:600}
+
+/* ---- the composer, at episode one's geometry ---- */
+.ask{margin:26px 0 0;max-width:820px}
+.chips{display:flex;gap:7px;flex-wrap:wrap;margin:0 0 11px;padding:0;list-style:none}
+.chip{font:inherit;font-size:12.5px;color:var(--dim);background:transparent;
+  border:1px solid var(--rule-2);border-radius:999px;padding:6px 13px;cursor:pointer;
+  display:inline-flex;align-items:center;gap:7px;
+  transition:background .15s ease,color .15s ease}
+.chip:hover{color:var(--ink);background:#ffffff0f}
+.chip i{font-style:normal;font-family:var(--mono);font-size:9.5px;color:var(--clay);
+  letter-spacing:.04em;text-transform:uppercase}
+.chip.needs i{color:var(--dimmer)}
+.composer{background:var(--raised);border-radius:14px;padding:8px;
+  border:1px solid var(--rule-2)}
+.line{display:flex;align-items:flex-end;gap:8px;padding-left:8px}
+#msg{flex:1;min-width:0;background:none;border:0;color:var(--ink);font:inherit;
+  font-size:15px;line-height:21px;padding:7px 0}
+#msg:focus{outline:none}
+#msg::placeholder{color:var(--dimmer)}
+#send{flex:0 0 auto;width:28px;height:28px;border-radius:8px;border:0;cursor:pointer;
+  background:var(--clay);color:#fff;display:grid;place-items:center;
+  transition:background .15s ease}
+#send:hover:not(:disabled){background:var(--clay-hot)}
+#send:disabled{background:#ffffff1a;color:var(--dimmer);cursor:default}
+#send svg{width:15px;height:15px;display:block}
+.hint{font-size:12px;color:var(--dimmer);margin:9px 0 0}
+button:focus-visible,input:focus-visible{outline:2px solid var(--clay);outline-offset:2px}
+@media (max-width:640px){
+  .wrap{padding:18px 14px 40px} h1{font-size:18px} .q{max-width:88%}
+  header{padding:11px 14px} .status{text-align:left;max-width:100%}
+}
+@media (prefers-reduced-motion:reduce){.idle,.answer,.q{transition:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="mark"><b>Into the network, and out again</b> &nbsp;· one question, all the way through
+    &nbsp;· <a href="../word-network/">episode one</a></div>
+  <div class="status" id="status">recorded questions ready</div>
+</header>
+
+<div class="wrap">
+  <h1>Ask it something, and watch it answer</h1>
+  <p class="lede">A question goes in and a reply comes out. In between, five steps:
+    your words arrive, each one reaches into the network around it, the whole network
+    wires itself, it compresses into a cursor, and the reply comes back out a word at
+    a time. Real data from SmolLM2&#8209;360M, running in your own browser.</p>
+
+  <div class="thread"><div class="q" id="q"></div></div>
+
+  <div class="stage" id="stage">
+    <img class="pad" alt="" aria-hidden="true"
+         src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1000' height='540'%3E%3C/svg%3E">
+    <canvas id="gl"></canvas>
+    <canvas id="ov"></canvas>
+    <div class="hud" id="hud"></div>
+    <div class="idle" id="idle"><div>
+      <p><b>Nothing running yet.</b>
+         Pick one of the questions below for an answer the model already gave,
+         or type your own and it will be worked out here, in this tab.</p>
+      <p class="pulse" id="idlePulse"></p>
+    </div></div>
+  </div>
+
+  <div class="bar">
+    <button id="replay" disabled>Replay</button>
+    <button id="pause" disabled>Pause</button>
+    <span class="step" id="step"></span>
+  </div>
+
+  <div class="answer" id="answer">
+    <p class="who" id="answerWho"></p>
+    <p id="said"></p>
+  </div>
+
+  <div class="ask">
+    <ul class="chips" id="chips"></ul>
+    <div class="composer">
+      <div class="line">
+        <input id="msg" type="text" autocomplete="off" spellcheck="false"
+               placeholder="Ask anything, and watch it work.">
+        <button id="send" title="Ask" disabled aria-label="Ask">
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M8 13V3.5M8 3.5 3.5 8M8 3.5 12.5 8" stroke="currentColor"
+                  stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+    <p class="hint" id="hint"></p>
+  </div>
+
+  <p class="note" id="note"></p>
+</div>
+
+<script>
+/* SEEDS_HERE */
+</script>
+<script type="module">
+import * as THREE from 'THREE_URL';
+/* ENGINE_HERE */
+/* APP_HERE */
+</script>
+</body>
+</html>
