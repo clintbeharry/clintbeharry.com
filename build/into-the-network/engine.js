@@ -17,7 +17,7 @@ const CLAYC="#d97757", INKC="#d4d4d4";
 /* ------------------------------------------------------------------ stage */
 const gl=$("gl"), ov=$("ov"), stageEl=$("stage"), ctx=ov.getContext("2d");
 const renderer=new THREE.WebGLRenderer({canvas:gl,antialias:true,alpha:false});
-renderer.setClearColor(0x161616,1);
+renderer.setClearColor(0x191919,1);   /* the thread background, not a frame */
 const scene=new THREE.Scene();
 const cam=new THREE.PerspectiveCamera(38,16/9,1,6000);
 let DPR=Math.min(2,window.devicePixelRatio||1), VW=1000, VH=540;
@@ -641,71 +641,21 @@ async function play(data){
   await clock(1320,(_,el)=>{ LATE=()=>caret(CARET,1,el); });
   if(me!==run) return;
 
-  /* ---------- 5 · and out ---------- */
-  $("step").textContent="5 / 5";
-  hud("5 · and out, a word at a time",
-      "every next word is a share of the probability, and the biggest share wins");
-  const steps=[];
-  G.reply.forEach((R,i)=>{
-    const an=mkNode("",i===0?CARET.x:S[i-1].x,LINE_Y,0,0);
-    const items=R.cands.slice(0,10);
-    const field=items.map((cd,k)=>{
-      const n=mkNode(cd.w,0,0,0,0); n.dr=1; n.am=7; if(!k){n.baseline=1;n.bold=true;}
-      n.wt=cl(Math.pow(cd.p,.33),.14,1);
-      n.size=.92+.55*Math.pow(cd.p,.30);
-      n.full=.42+.52*Math.pow(cd.p,.30);
-      const f=k/((items.length-1)||1), a=-(.18+f*1.15), Rr=72+f*145;
-      n.h.set(an.h.x+22+Math.cos(a)*Rr, an.h.y-12+Math.sin(a)*Rr*.80,
-              hash3(cd.w)[1]*230);
-      n.p.copy(n.h); n.h0=n.h.clone();
-      n.e=mkEdge(an,n,GREY,0,n.wt);
-      const q=mkNode(pct(cd.p),0,0,0,0); q.mono=true; q.size=.62; q.dr=1; q.am=7;
-      q.h.copy(n.h); q.h.x+=9+cd.w.length*3.2; q.h.y-=1; q.p.copy(q.h); q.h0=q.h.clone();
-      n.pctN=q;
-      return n;
-    });
-    const won=mkNode(R.tok,S[i].x,LINE_Y,0,0); won.size=1.75; won.dr=0;
-    won.baseline=1; won.bold=true;
-    steps.push({field,won,items,target:V3(S[i].x,LINE_Y,0)});
-  });
-  const TOT=PER*G.reply.length+6200;
-  let blink=true;
-  await clock(TOT,(_,t)=>{
-    steps.forEach((s,i)=>{
-      const t0=i*PER;
-      const app=io(seg(t,t0,t0+380));
-      const res=io(seg(t,t0+700,t0+980));
-      const trv=io(seg(t,t0+980,t0+1300));
-      s.field.forEach((n,k)=>{
-        if(k===0){
-          n.op=app*(1-seg(t,t0+1300,t0+1360));
-          n.warm=1; n.size=1.02+.73*res;
-          n.h.lerpVectors(n.h0,s.target,trv); n.dr=1-trv;
-          n.e.op=app*(1-seg(t,t0+1180,t0+1340))*.95;
-          const rise=Math.max(0,(t-(t0+1300))/2600);
-          n.pctN.size=.62+.30*res;
-          n.pctN.warm=1-seg(t,t0+3000,t0+4200);
-          n.pctN.op=app*(1-seg(t,t0+4400,t0+6100));
-          n.pctN.h.lerpVectors(n.pctN.h0,V3(s.target.x,s.target.y+20+rise*16,0),trv);
-          n.pctN.dr=1-trv;
-        }else{
-          const go=seg(t,t0+1350,t0+1760);
-          n.op=app*(1-go)*n.full;
-          n.e.op=app*(1-go)*.9;
-          n.pctN.op=app*(1-go)*.5;
-        }
-      });
-      s.won.op=t>t0+1300?1:0;
-      s.won.warm=1-seg(t,t0+3000,t0+4200);
-    });
-    if(t>500) blink=false;
-    LATE=blink?()=>caret(CARET,1-seg(t,300,520),t):null;
-  });
-  if(me!==run) return;
-  hud("the reply the model actually produced",
-      "\u201c"+G.reply.reduce((a,r,i)=>
-        a+(i&&!/^[,.;:!?]/.test(r.tok)?" ":"")+r.tok,"")+"\u2026\u201d");
-  $("step").textContent="done";
+  /* ---------- and out ----------
+     The reply used to be drawn here, in the canvas, as 3D words on a line.
+     It is written into the thread itself now: real text, wrapping over real
+     lines, in the message where an answer belongs. A reply is not a thing to
+     watch inside a frame, it is a thing to read.
+
+     So the sequence ends on the blinking cursor it folded into, and the page
+     takes over from there. What it hands back is where that cursor is, in
+     page coordinates, so the writing can begin from exactly the spot the
+     network became. */
+  $("step").textContent="writing";
+  hud("", "");
+  const v=CARET.clone().project(cam);
+  const r=stageEl.getBoundingClientRect();
+  return { x:r.left+(v.x*.5+.5)*r.width, y:r.top+(-v.y*.5+.5)*r.height };
 }
 
 window.playRun=play;

@@ -150,17 +150,130 @@ async function ask(text){
 
   if(my !== token) return;
   last = G;
-  claim($("stage"), bt);
+  const st = $("stage");
+  st.style.height = ""; st.style.opacity = "";
+  claim(st, bt);
   bt.classList.remove("working");
   who(bt, "");
-  actions(bt);
-  await window.playRun(G);
+  const at = await window.playRun(G);
   if(my !== token) return;
-  say(bt, G.said || "");
-  const r = bt.querySelector(".acts [data-a=replay]");
-  if(r) r.disabled = false;
-  const p = bt.querySelector(".acts [data-a=pause]");
-  if(p) p.disabled = true;
+  await collapse($("stage"));
+  if(my !== token) return;
+  await writeReply(bt, G, my, at);
+  if(my !== token) return;
+  /* the controls belong under the finished message, the way a chat puts copy
+     and retry there, not above an answer that has not been written yet */
+  actions(bt);
+  scroll();
+}
+
+/* The sequence folded the whole network into a blinking cursor. The cursor
+   is what writes, so the stage closes rather than sitting there as a spent
+   frame, and the reply picks up in the thread. */
+function collapse(stage){
+  return new Promise(r => {
+    const h = stage.offsetHeight;
+    stage.style.height = h + "px";
+    void stage.offsetHeight;                 /* let the start height stick */
+    requestAnimationFrame(() => {
+      stage.style.height = "0px";
+      stage.style.opacity = "0";
+    });
+    setTimeout(() => { stage.style.height = ""; stage.style.opacity = "";
+                       stage.remove(); $("park").appendChild(stage); r(); }, 640);
+  });
+}
+
+const FAN_N = 6;        /* candidates shown under each word */
+const MAX_CH = 13;      /* a long one is clipped so it cannot shove the line apart */
+const pause = ms => new Promise(r => setTimeout(r, ms));
+const share = p => p >= .995 ? (Math.floor(p * 1000) / 10).toFixed(1) + "%"
+               : p >= .1   ? (p * 100).toFixed(0) + "%"
+               : p >= .001 ? (p * 100).toFixed(1) + "%"
+               : p >= .00005 ? (p * 100).toFixed(2) + "%" : "<0.01%";
+const bitsOf = p => Math.log2(1 / Math.max(p, 1e-9));
+const el = (t, c) => { const e = document.createElement(t); if(c) e.className = c; return e; };
+
+/* One word: the field it was chosen from, and the word rising out of it. */
+function buildTok(step){
+  const tok = el("span", "tok");
+  const word = el("span", "word");
+  word.textContent = step.tok;
+  tok.appendChild(word);
+
+  const field = step.cands.slice(0, FAN_N);
+  const clip = w => w.length > MAX_CH ? w.slice(0, MAX_CH - 1) + "\u2026" : w;
+  /* the line spaces itself so every field has somewhere to sit, plus a little
+     over, because words butted together read as one word */
+  const widest = Math.max(step.tok.length, ...field.map(c => clip(c.w).length));
+  tok.style.setProperty("--pad",
+    (0.45 + (widest - step.tok.length) / 2).toFixed(2) + "ch");
+
+  const fan = el("span", "fan");
+  field.forEach((c, i) => {
+    const row = el("i");
+    row.appendChild(document.createTextNode(clip(c.w)));
+    const sh = el("s"); sh.textContent = share(c.p); row.appendChild(sh);
+    row.style.setProperty("--o", (.16 + Math.sqrt(c.p) * .7).toFixed(3));
+    if(i === 0) row.classList.add("win");
+    fan.appendChild(row);
+  });
+  tok.appendChild(fan);
+  return { tok, fan, word };
+}
+
+/* The reply, written into the thread a word at a time. Pace carries meaning:
+   a word the model was sure of barely pauses, an uncertain one holds long
+   enough that its field can be read. */
+async function writeReply(bot, G, my, at){
+  const p = el("p", "reply");
+  const caret = el("span", "caret");
+  p.appendChild(caret);
+  bot.appendChild(p);
+  scroll();
+
+  for(const step of G.reply){
+    if(my !== token) return;
+    const { tok, fan } = buildTok(step);
+    /* A real space between words, not just the padding that holds a field
+       open. Padding alone spaces the line while it is being written and then
+       has nothing to relax to, so the finished answer keeps animation gaps
+       and its punctuation floats off on its own. */
+    if(p.querySelector(".tok") && !/^[,.;:!?)\]'’]/.test(step.tok))
+      p.insertBefore(document.createTextNode(" "), caret);
+    p.insertBefore(tok, caret);
+    scroll();
+
+    fan.classList.add("in");
+    await pause(80);
+    if(my !== token) return;
+    await pause(Math.min(680, Math.max(70, bitsOf(step.cands[0].p) * 155)));
+    if(my !== token) return;
+
+    const win = fan.children[0];
+    win.style.setProperty("--dy", "-" + win.offsetTop + "px");
+    win.classList.add("rise");
+    fan.classList.add("out");
+
+    /* the share it was taken at, rising away: a few of them are in the air
+       at once, so the line reads as a run of decisions rather than one */
+    const lift = el("span", "lift");
+    lift.textContent = share(step.cands[0].p);
+    tok.appendChild(lift);
+    requestAnimationFrame(() => lift.classList.add("go"));
+    setTimeout(() => lift.remove(), 2700);
+
+    await pause(300);
+    if(my !== token) return;
+    tok.classList.add("set");
+    await pause(40);
+    fan.classList.remove("in", "out");
+    fan.classList.add("rest");
+    [...fan.children].forEach((c, i) => { if(i && i < 4) c.classList.add("keep"); });
+    win.classList.remove("rise");
+  }
+  caret.remove();
+  p.classList.add("done");
   scroll();
 }
 
@@ -173,14 +286,9 @@ function actions(t){
     b.dataset.a = key; b.textContent = label;
     a.appendChild(b); return b;
   };
-  const rep = mk("replay", "Replay"); rep.disabled = true;
-  const pau = mk("pause", "Pause");
-  rep.onclick = () => { if(last) ask(last.prompt); };
-  pau.onclick = () => {
-    const p = !window.isPaused();
-    window.setPaused(p);
-    pau.textContent = p ? "Play" : "Pause";
-  };
+  /* Pause steered the sequence, which by now has finished and gone. Replay
+     is the only thing left that means anything here. */
+  mk("replay", "Replay").onclick = () => { if(last) ask(last.prompt); };
   t.appendChild(a);
 }
 

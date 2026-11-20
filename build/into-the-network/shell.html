@@ -49,9 +49,12 @@ body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
                    50%{transform:scale(1);filter:brightness(1.07)}}
 .turn.bot .answer{margin:14px 0 0;white-space:pre-wrap;word-break:break-word}
 
-/* the visualisation sits where a chat puts its thinking */
-.stage{position:relative;border:1px solid var(--rule-2);border-radius:14px;
-  overflow:hidden;background:#161616}
+/* The visualisation sits where a chat puts its thinking, and sits ON the
+   thread rather than inside a frame. A border and a darker fill made it read
+   as a video embedded in the page, which is the opposite of the claim: this
+   is the message being formed, not a recording of one. */
+.stage{position:relative;overflow:hidden;background:var(--page);
+  transition:height .6s cubic-bezier(.4,0,.2,1),opacity .45s ease}
 .stage canvas{display:block;width:100%;height:100%;position:absolute;inset:0}
 .stage .pad{display:block;width:100%}
 #ov{pointer-events:none}
@@ -61,6 +64,66 @@ body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
 /* parked offscreen until a turn claims it, at a real size so the canvas
    does not have to be resized from zero when it lands */
 #park{position:fixed;left:-10000px;top:0;width:1000px;height:560px}
+
+/* ---- the reply, written into the thread ----
+   Each word reserves room under itself for the field it was chosen from, so
+   the line opens a band deep enough to hold one. The word keeps a tight line
+   box of its own, so the field hangs under the glyph and not under the whole
+   opened line. */
+.reply{--row:18px;--gap:12px;--band:calc(var(--gap) + 7.4*var(--row));
+  line-height:var(--band);margin:calc((1.6em - var(--band))/2) 0 0;
+  white-space:pre-wrap;word-break:break-word;color:var(--ink)}
+/* Once it has been read, the band closes to ordinary prose and the fields go
+   with it. They are absolutely positioned under their word, so a closed band
+   leaves them sitting on the line below: the finished answer has to be an
+   answer, not an answer with the rejected words written through it. */
+.reply.done{--band:1.65em;
+  transition:line-height .6s cubic-bezier(.3,0,.2,1),margin-top .6s cubic-bezier(.3,0,.2,1)}
+.reply.done .fan{opacity:0;transition:opacity .4s ease}
+.reply.done .fan i{opacity:0;transition:opacity .4s ease}
+/* and the room each word was holding for its field is given back, so what is
+   left reads as a sentence rather than as a timing diagram */
+.reply.done .tok{padding-left:0;padding-right:0;
+  transition:padding .5s cubic-bezier(.3,0,.2,1)}
+.tok{position:relative;display:inline-block;white-space:pre;vertical-align:baseline;
+  line-height:1.3;text-align:center;padding-left:var(--pad,0);padding-right:var(--pad,0)}
+.tok .word{display:inline-block;line-height:1.3;opacity:0;
+  transition:opacity .16s ease,color .3s ease}
+.tok.set .word{opacity:1}
+.tok.set .word{color:var(--ink)}
+
+/* the field hangs below the word it belongs to */
+.fan{position:absolute;left:50%;transform:translateX(-50%);
+  top:calc(100% + var(--gap));display:flex;flex-direction:column;align-items:center;
+  white-space:pre;pointer-events:none}
+.fan i{font-style:normal;display:flex;gap:6px;align-items:baseline;
+  height:var(--row);line-height:var(--row);font-size:13px;color:var(--dim);
+  opacity:0;transition:opacity .24s ease,transform .32s cubic-bezier(.3,0,.2,1)}
+.fan i s{font-family:var(--mono);font-size:10px;color:var(--dimmer);
+  text-decoration:none;font-variant-numeric:tabular-nums}
+.fan.in i{opacity:var(--o,.35)}
+.fan i.win{color:var(--clay);font-weight:500}
+.fan i.win s{color:var(--clay);opacity:.75}
+/* the one it took lifts out of the field and into the sentence */
+.fan i.rise{transform:translateY(var(--dy));opacity:1;
+  transition:transform .34s cubic-bezier(.4,0,.2,1),opacity .3s ease}
+.fan.out i:not(.rise){opacity:0}
+.fan.rest i{opacity:0}
+.fan.rest i.keep{opacity:calc(var(--o,.35) * .26);transition:opacity .7s ease}
+
+/* the share it was taken at, rising away above the line */
+.lift{position:absolute;left:50%;top:-2px;transform:translateX(-50%);
+  font-family:var(--mono);font-size:10.5px;color:var(--clay);pointer-events:none;
+  opacity:0;white-space:pre}
+.lift.go{opacity:1;animation:liftaway 2.6s cubic-bezier(.25,.6,.3,1) forwards}
+@keyframes liftaway{
+  0%{opacity:0;transform:translate(-50%,4px)}
+  14%{opacity:.95;transform:translate(-50%,-6px)}
+  100%{opacity:0;transform:translate(-50%,-40px)}
+}
+.caret{display:inline-block;width:2px;height:1.05em;vertical-align:-.16em;
+  background:var(--clay);border-radius:1px;animation:blink 1.15s steps(1,end) infinite}
+@keyframes blink{0%,45%{opacity:1}46%,100%{opacity:0}}
 
 /* message actions, the way a chat shows copy and retry */
 .acts{display:flex;gap:4px;margin:9px 0 0}

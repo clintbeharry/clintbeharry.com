@@ -47,7 +47,7 @@ if not os.path.isdir(M):
 SYSTEM = "You are a helpful assistant."
 TEMP, TOP_P, MIN_NEW, MAX_NEW = 0.7, 0.92, 20, 88
 ASSOC_SHOW, ASSOC_POOL, ASSOC_WORDS = 13, 45, 12
-REPLY_STEPS, CAND_SHOW, EMERGE_SHOW = 6, 13, 12
+CAND_SHOW, EMERGE_SHOW = 13, 12
 
 WORD  = re.compile(r"^[A-Za-z][A-Za-z'-]{1,}$")
 TYPED = re.compile(r"^[A-Za-z][A-Za-z'-]*$")
@@ -156,6 +156,20 @@ def generate(text, seed):
             break
     return steps
 
+def whole_reply(words, said):
+    """Every word of the answer, not the first handful. The reply is written
+       out in the thread now, so it needs a field for each word. Words past
+       the last finished sentence are dropped, so what gets animated and what
+       gets printed are the same text."""
+    keep, run = [], ""
+    for w in words:
+        if len(run) >= len(said):
+            break
+        keep.append(w)
+        run += w["tok"]
+    return keep
+
+
 def group_words(steps):
     runs = []
     for st in steps:
@@ -229,7 +243,7 @@ def capture(text, seed=7):
         seen.add(k); em.append(w)
         if len(em) >= EMERGE_SHOW: break
     g = {"prompt": text, "q": q, "emerge": em,
-         "reply": group_words(steps)[:REPLY_STEPS], "said": said}
+         "reply": whole_reply(group_words(steps), said), "said": said}
     assert g["q"] and all(x["assoc"] for x in g["q"]), "a question word has no neighbours"
     for r in g["reply"]:
         assert r["cands"][0]["w"] == r["tok"], "the word taken is not first in its field"
