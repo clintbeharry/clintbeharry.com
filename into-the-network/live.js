@@ -400,6 +400,10 @@ const REPLY_STEPS = 6;   /* words step five animates; the rest is printed */
 /* Real words only. The candidate list is full of punctuation, fragments and
    casing variants, none of which say anything as a neighbour. */
 const isWord = w => /^[A-Za-z][A-Za-z'-]{1,}$/.test(w);
+/* The person's own words are held to a looser rule: "a" and "I" are poor
+   neighbours but they are still words somebody typed, and a question that
+   arrives on screen as "What is prime number" is just wrong. */
+const isTyped = w => /^[A-Za-z][A-Za-z'-]*$/.test(w);
 
 /* Token positions grouped into words. A piece that does not open with a space
    continues the word before it, which is how this tokenizer marks boundaries.
@@ -422,7 +426,7 @@ function wordsOf(tok, ids, span){
   }
   const out = [];
   for(const m of text.matchAll(/[A-Za-z][A-Za-z'-]*/g)){
-    if(!isWord(m[0])) continue;
+    if(!isTyped(m[0])) continue;
     const end = m.index + m[0].length - 1;
     const p = piece.find(p => end >= p.a && end < p.b);
     if(p) out.push({ w: m[0], at: p.i });
@@ -568,12 +572,56 @@ export function toReply(steps, n = REPLY_STEPS){
     const i = P.findIndex(c => c.w === st.tok);
     if(i >= 0) P.splice(i, 1);
     P.sort((a, b) => b.p - a.p);
+    /* Candidates arrive with the tokenizer's leading space on them. Centred
+       in the field that space shifts the word off its own line, and once
+       trimmed some of them collide, so the duplicates go too. */
     const whole = g.text.trim() || g.text;
-    return { tok: whole, cands: [{ w: whole, p: st.p }, ...P].slice(0, 13) };
+    const seen = new Set([whole.toLowerCase()]);
+    const field = [];
+    for(const c of P){
+      const w = c.w.trim() || c.w, k = w.toLowerCase();
+      if(seen.has(k)) continue;
+      seen.add(k); field.push({ w, p: c.p });
+    }
+    return { tok: whole, cands: [{ w: whole, p: st.p }, ...field].slice(0, 13) };
   });
 }
 
-/* the whole reply, as text */
-export const sayWhat = steps => steps.map(s => s.tok).join("").trim();
+/* Words the answer reached for that the question never mentioned. These seat
+   the cloud in step three, so an empty list leaves it thin. Taken from the
+   answer first, since those are the words it actually used, then from the
+   ones it nearly used. */
+const STOP = new Set(("a an the is are was were be been being am of to in on at by for with from "
+ + "into over under about as it its this that these those there here and or but not no so such "
+ + "then than you your yours we our they them their he she his her i me my if when while how why "
+ + "what which who whom can could will would shall should may might must do does did done have "
+ + "has had get got make makes made very just only also more most other others some any each all "
+ + "both much many").split(" "));
+
+export function concepts(steps, qWords, n = 12){
+  const asked = new Set(qWords.map(w => w.toLowerCase()));
+  const seen = new Set(), out = [];
+  const pools = [ (sayWhat(steps).match(/[A-Za-z][A-Za-z'-]*/g) || []),
+                  steps.flatMap(s => s.cands.map(c => c[0])) ];
+  for(const pool of pools){
+    for(const raw of pool){
+      const w = raw.trim(), k = w.toLowerCase();
+      if(!isWord(w) || STOP.has(k) || asked.has(k) || seen.has(k)) continue;
+      seen.add(k); out.push(w);
+      if(out.length >= n) return out;
+    }
+  }
+  return out;
+}
+
+/* The whole reply, cut back to its last finished sentence. The decode loop
+   stops on a sentence end when it can, but a reply that runs into the token
+   cap stops wherever it happens to be, and a dangling clause reads as a
+   broken page rather than as an answer. */
+export function sayWhat(steps){
+  const t = steps.map(s => s.tok).join("").trim();
+  const m = [...t.matchAll(/[.!?]["')\]]?(?=\s|$)/g)];
+  return m.length ? t.slice(0, m[m.length-1].index + m[m.length-1][0].length).trim() : t;
+}
 
 export const LIMITS = { REPLY_STEPS, ASSOC_WORDS };

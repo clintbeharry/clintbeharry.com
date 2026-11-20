@@ -132,8 +132,8 @@ async function ask(text){
       });
       if(my !== token) return;
       if(!steps.length) throw new Error("the model stopped before saying anything");
-      G = { prompt: text, q, emerge: [], reply: m.toReply(steps),
-            said: m.sayWhat(steps), live: true };
+      G = { prompt: text, q, emerge: m.concepts(steps, q.map(x => x.w)),
+            reply: m.toReply(steps), said: m.sayWhat(steps), live: true };
     }catch(e){
       if(my !== token) return;
       bt.classList.remove("working");
@@ -217,14 +217,22 @@ $("send").onclick = submit;
    neighbourhoods and this one cannot.
 --------------------------------------------------------------------------- */
 async function captureAll(){
-  const todo = SUGGEST.filter(s => !findSeed(s));
+  /* ?capture        fills in whatever is missing
+     ?capture=all    records everything again, which is what to use after a
+                     change to how the data is built. A question captured
+                     here carries browser-derived neighbourhoods, so an
+                     offline capture of the same question is worth more and
+                     this will overwrite it. */
+  const all = /capture=all/.test(location.search);
+  const want = RECORDED.map(g => g.prompt).concat(SUGGEST.filter(s => !findSeed(s)));
+  const todo = all ? want : SUGGEST.filter(s => !findSeed(s));
   const t = turn("bot");
   who(t, "capture mode");
   if(!todo.length){ say(t, "Everything is already recorded."); return; }
   const note = say(t, "About to capture " + todo.length + " questions. Keep this tab "
     + "open and awake; it takes a few minutes.");
   if(!okToLoad && !(await gate(t, ""))) return;
-  const out = RECORDED.slice();
+  const out = all ? [] : RECORDED.slice();
   try{
     const m = await provider(msg => note.textContent = "Getting the model, " + msg + ".");
     for(const q of todo){
@@ -233,8 +241,8 @@ async function captureAll(){
       const steps = await m.generate(q, undefined, (st, all) => {
         note.textContent = "Capturing: " + q + "  (" + all.length + " words)";
       });
-      out.push({ prompt:q, q:a.q, emerge:[], reply:m.toReply(steps),
-                 said:m.sayWhat(steps), from:"browser" });
+      out.push({ prompt:q, q:a.q, emerge:m.concepts(steps, a.q.map(x => x.w)),
+                 reply:m.toReply(steps), said:m.sayWhat(steps), from:"browser" });
       say(t, "\u2713 " + q + "\n   " + m.sayWhat(steps));
     }
   }catch(e){ note.textContent = "Stopped: " + e.message; return; }
