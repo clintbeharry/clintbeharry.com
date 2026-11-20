@@ -1,368 +1,262 @@
 #!/usr/bin/env python3
 """
-Capture recorded questions for into-the-network/.
+Record questions for into-the-network/, using a local copy of the model.
 
-Run this anywhere with normal internet and a few GB of disk:
-
-    pip install torch transformers
     python build/capture-seeds.py "Why is the sky blue?" "What makes bread rise?"
 
-It writes into-the-network/seeds.js. Questions already in that file are kept
-unless you pass --replace, so you can add one at a time.
+Reads the ONNX export and the tokenizer from a folder on disk. Nothing is
+downloaded, which is the point: huggingface.co is unreachable from the
+sandboxes this project is built in, and it needs to be reachable from
+nowhere at all.
 
-WHY THIS EXISTS
----------------
-The page can answer anything typed into it, by running the model in the
-visitor's own browser. That costs a 300MB download before the first answer.
-Most visitors will click a suggested question, watch, and leave, so the
-recorded questions are what the page actually shows most people, and they
-need to play instantly.
+    --model PATH   the model folder, default ./models/smol360 or $SMOL360.
+                   It needs tokenizer.json and onnx/model_q4f16.onnx.
+    --out PATH     where to write, default build/into-the-network/seeds.js
+    --seed N       decode seed, default 7
 
-A capture also does something the live path cannot. Here we have the real
-embedding matrix, so a word's neighbours are its actual nearest neighbours in
-that matrix and their directions come from a projection of it. In the browser
-that table is not available, so the live path measures something else (how
-strongly each of your words predicts a candidate). Both are honest; this one
-is the stronger claim, and it is the one the page's "what is real here" line
-describes when it plays a recorded run.
+Needs: numpy, onnxruntime, tokenizers, onnx, wordfreq.
 
-DECODE SETTINGS
----------------
-Deliberately identical to into-the-network/live.js, so a recorded answer and
-a live one are the same kind of object and hesitate in the same way. If you
-change them there, change them here.
+Two kinds of data come out of this, and they are not the same quality as
+what a browser can produce. The reply is the model's own next-token
+distribution either way. The NEIGHBOURHOODS are the difference: here the
+real embedding matrix is on disk, so a word's neighbours are its actual
+nearest neighbours in that matrix. In a browser that matrix is not
+reachable, and the page falls back to measuring something else.
+
+Run build/build-into-the-network.py afterwards to fold the result into
+the page.
 """
+import json, math, os, re, sys, time
+import numpy as np, onnxruntime as ort
+from tokenizers import Tokenizer
 
-import argparse, json, math, os, re, sys
-
-MODEL      = "HuggingFaceTB/SmolLM2-360M-Instruct"
-SYSTEM     = "You are a helpful assistant."
-TEMP       = 0.7
-TOP_P      = 0.92
-MIN_NEW    = 20
-MAX_NEW    = 88
-
-ASSOC_SHOW   = 13    # neighbours kept per question word
-ASSOC_POOL   = 45    # nearest neighbours considered before sampling by direction
-ASSOC_WORDS  = 9     # question words the sequence can seat on its line
-REPLY_STEPS  = 6     # words step five animates; the rest is printed under it
-CAND_SHOW    = 13    # candidates kept per reply step
-EMERGE_SHOW  = 12
-
-STOP = set("""a an the is are was were be been being am of to in on at by for with from into
-over under about as it its this that these those there here and or but not no so such then than
-you your yours we our they them their he she his her i me my if when while how why what which who
-whom can could will would shall should may might must do does did done have has had get got make
-makes made very just only also more most other others some any each all both much many""".split())
-
-HERE = os.path.dirname(os.path.abspath(__file__))
-OUT  = os.path.join(HERE, "into-the-network", "seeds.js")   # a build source, not served
-
-WORD  = re.compile(r"^[A-Za-z][A-Za-z'-]{1,}$")   # neighbours and concepts
-TYPED = re.compile(r"^[A-Za-z][A-Za-z'-]*$")      # the person's own words
-is_word  = lambda w: bool(WORD.match(w))
-# "a" and "I" are poor neighbours but they are still words somebody typed, and
-# a question reaching the screen as "What is prime number" is simply wrong.
-is_typed = lambda w: bool(TYPED.match(w))
+def _model_dir():
+    """--model wins, then $SMOL360, then a models/smol360 next to the repo.
+       Read before the model is loaded, which is why it is not in argparse."""
+    for i, a in enumerate(sys.argv):
+        if a == "--model" and i + 1 < len(sys.argv):
+            d = sys.argv[i + 1]; del sys.argv[i:i + 2]; return d
+        if a.startswith("--model="):
+            d = a.split("=", 1)[1]; sys.argv.remove(a); return d
+    return os.environ.get("SMOL360", "models/smol360")
 
 
-def whole_sentences(text):
-    """Back up to the last finished sentence. The decode loop stops on one when
-       it can, but a reply that runs into the token cap stops wherever it is,
-       and a dangling clause reads as a broken page rather than an answer."""
-    m = list(re.finditer(r"""[.!?]["')\]]?(?=\s|$)""", text))
-    return text[:m[-1].end()].strip() if m else text.strip()
+M      = _model_dir()
+if not os.path.isdir(M):
+    raise SystemExit("no model folder at %r. Pass --model PATH, or set SMOL360." % M)
+SYSTEM = "You are a helpful assistant."
+TEMP, TOP_P, MIN_NEW, MAX_NEW = 0.7, 0.92, 20, 88
+ASSOC_SHOW, ASSOC_POOL, ASSOC_WORDS = 13, 45, 12
+REPLY_STEPS, CAND_SHOW, EMERGE_SHOW = 6, 13, 12
 
+WORD  = re.compile(r"^[A-Za-z][A-Za-z'-]{1,}$")
+TYPED = re.compile(r"^[A-Za-z][A-Za-z'-]*$")
+is_word, is_typed = lambda w: bool(WORD.match(w)), lambda w: bool(TYPED.match(w))
+STOP = set("""a an the is are was were be been being am of to in on at by for with from into over
+under about as it its this that these those there here and or but not no so such then than you
+your yours we our they them their he she his her i me my if when while how why what which who whom
+can could will would shall should may might must do does did done have has had get got make makes
+made very just only also more most other others some any each all both much many""".split())
+
+def embedding_matrix(model_dir):
+    """The input embedding table, read straight out of the ONNX graph.
+
+    It is an initializer in the exported model, so no separate download and
+    no PyTorch checkpoint is needed. Taken from the q4f16 export, where this
+    one tensor is left at fp16 rather than quantized, because quantizing it
+    wrecks the output distribution."""
+    import onnx
+    from onnx import numpy_helper
+    m = onnx.load(os.path.join(model_dir, "onnx", "model_q4f16.onnx"))
+    for init in m.graph.initializer:
+        if len(init.dims) == 2 and 40000 < init.dims[0] < 60000:
+            return numpy_helper.to_array(init).astype(np.float32)
+    raise SystemExit("no vocabulary-sized tensor in the graph; wrong model?")
+
+
+tok = Tokenizer.from_file(M + "/tokenizer.json")
+EOS = 2                                    # <|im_end|>
+emb = embedding_matrix(M)
+embn = emb / np.maximum(np.linalg.norm(emb, axis=1, keepdims=True), 1e-9)
+
+# Only tokens that stand as a word on their own. Matching every token pulled
+# in mid-word fragments ("Ther", "pr", "PRI") and rare junk with interior
+# capitals ("ManagementPlaneProtection"), all of which sit near in embedding
+# space and say nothing as a neighbour. A leading U+0120 is this tokenizer's
+# mark for "this piece begins a word".
+GMARK = chr(0x120)
+# Lowercase only, and a word people actually use. "Ther", "Aqu" and "PRI"
+# are word-initial tokens that are not words; capitalisation is what gives
+# most of them away, and an English frequency list catches the rest. The
+# cost is a handful of legitimate proper nouns, which read oddly as
+# neighbours anyway.
+from wordfreq import top_n_list
+REAL = set(top_n_list("en", 40000))
+STANDALONE = re.compile(r"^[a-z][a-z'-]{2,}$")
+vocab_words = {}
+for w, i in tok.get_vocab().items():
+    if not w.startswith(GMARK):
+        continue
+    t = w[1:]
+    if STANDALONE.match(t) and t in REAL:
+        vocab_words[i] = t
+
+so = ort.SessionOptions(); so.log_severity_level = 3
+sess = ort.InferenceSession(os.path.join(M, "onnx", "model_q4f16.onnx"), so,
+                            providers=["CPUExecutionProvider"])
+NL = sum(1 for i in sess.get_inputs() if i.name.endswith(".key"))
+KH, HD = 5, 64
+
+def ends_sentence(t):
+    return bool(re.search(r'[.!?]["\')\]]?\s*$', t)) and not re.search(r'\d[.]\s*$', t) \
+           and not re.search(r'\b[A-Za-z][.]\s*$', t)
+
+def whole_sentences(t):
+    m = list(re.finditer(r'[.!?]["\')\]]?(?=\s|$)', t))
+    return t[:m[-1].end()].strip() if m else t.strip()
+
+def generate(text, seed):
+    rng = np.random.default_rng(seed)
+    prompt = ("<|im_start|>system\n" + SYSTEM + "<|im_end|>\n"
+              "<|im_start|>user\n" + text + "<|im_end|>\n<|im_start|>assistant\n")
+    ids = tok.encode(prompt, add_special_tokens=False).ids
+    past = {f"past_key_values.{i}.{k}": np.zeros((1, KH, 0, HD), np.float16)
+            for i in range(NL) for k in ("key", "value")}
+    cur, pos, steps = np.array([ids], np.int64), len(ids), []
+    while len(steps) < MAX_NEW:
+        n = cur.shape[1]
+        feed = {"input_ids": cur,
+                "attention_mask": np.ones((1, pos), np.int64),
+                "position_ids": np.arange(pos - n, pos, dtype=np.int64)[None], **past}
+        out = sess.run(None, feed)
+        names = [o.name for o in sess.get_outputs()]
+        logits = out[0][0, -1].astype(np.float32)
+        past = {("past_key_values." + names[j].split(".", 1)[1]): out[j]
+                for j in range(1, len(names))}
+        # nucleus sampling at temperature, over the whole distribution
+        z = logits - logits.max()
+        p = np.exp(z / TEMP); p /= p.sum()
+        order = np.argsort(-p)
+        keep = int(np.searchsorted(np.cumsum(p[order]), TOP_P)) + 1
+        pick = int(order[rng.choice(keep, p=p[order][:keep] / p[order][:keep].sum())])
+        piece = tok.decode([pick], skip_special_tokens=False)
+        if pick == EOS or (piece.startswith("<|") and piece.endswith("|>")):
+            break
+        pr = np.exp(z); pr /= pr.sum()           # the model's own probabilities
+        top = np.argsort(-pr)[:60]
+        cands = []
+        for i in top:
+            w = tok.decode([int(i)], skip_special_tokens=False)
+            if "�" in w or int(i) == pick: continue
+            cands.append({"w": w, "p": round(float(pr[i]), 6)})
+            if len(cands) >= CAND_SHOW: break
+        steps.append({"tok": piece, "p": round(float(pr[pick]), 6), "cands": cands})
+        cur, pos = np.array([[pick]], np.int64), pos + 1
+        if len(steps) >= MIN_NEW and ends_sentence("".join(s["tok"] for s in steps)):
+            break
+    return steps
 
 def group_words(steps):
-    """Tokens are not words. "Bread" is two of them, and animating six tokens
-       put "B" and "read" on the line as separate words. A word's field is its
-       FIRST token's distribution, because that is the choice that committed
-       to the word."""
     runs = []
     for st in steps:
-        opens = not runs or st["tok"][:1].isspace() or st["tok"][:1] in ",.;:!?)]"
-        if opens: runs.append([st])
+        if not runs or st["tok"][:1].isspace() or st["tok"][:1] in ",.;:!?)]": runs.append([st])
         else: runs[-1].append(st)
     out = []
     for g in runs:
         first = g[0]
-        text = "".join(x["tok"] for x in g).strip() or first["tok"]
+        # A run that is nothing but whitespace is not a word. Falling back to
+        # the raw token kept its space, which is exactly what this is meant to
+        # remove, so such a run is dropped rather than patched up.
+        text = "".join(x["tok"] for x in g).strip()
+        if not text: continue
         seen, field = {text.lower()}, []
         for c in first["cands"]:
-            w = c["w"].strip() or c["w"]          # the tokenizer's leading space
-            if w.lower() in seen: continue        # which, trimmed, collides
-            seen.add(w.lower())
-            field.append({"w": w, "p": c["p"]})
-        out.append({"tok": text,
-                    "cands": ([{"w": text, "p": first["p"]}] + field)[:CAND_SHOW]})
+            w = c["w"].strip()
+            if not w or w.lower() in seen: continue
+            seen.add(w.lower()); field.append({"w": w, "p": c["p"]})
+        out.append({"tok": text, "cands": ([{"w": text, "p": first["p"]}] + field)[:CAND_SHOW]})
     return out
 
-
-def ends_sentence(text):
-    """A sentence end, but not a decimal point or an initial. Same rule as live.js."""
-    return (re.search(r"[.!?][\"')\]]?\s*$", text)
-            and not re.search(r"\d[.]\s*$", text)
-            and not re.search(r"\b[A-Za-z][.]\s*$", text))
-
-
 def pca2(X):
-    """Two components, centred. X is [n, d]; returns [n, 2]."""
-    import torch
-    X = X - X.mean(0, keepdim=True)
-    # full SVD is cheap at these sizes and avoids a power-iteration seed
-    U, S, V = torch.linalg.svd(X, full_matrices=False)
+    X = X - X.mean(0, keepdims=True)
+    U, S, V = np.linalg.svd(X, full_matrices=False)
     return X @ V[:2].T
 
-
-def word_vector(tok, emb, word):
-    """One vector for a whole word, averaged over its pieces.
-
-    The leading space matters: this tokenizer treats ' water' and 'water' as
-    different tokens, and the one that appears mid-sentence is the spaced one.
-    """
-    ids = tok(" " + word, add_special_tokens=False)["input_ids"]
-    if not ids:
-        ids = tok(word, add_special_tokens=False)["input_ids"]
-    if not ids:
-        return None
-    v = emb[ids].mean(0)
-    n = v.norm()
-    return v / n if n > 0 else None
-
-
-def neighbourhood(tok, emb, embn, word, vocab_words):
-    """The word's real nearest neighbours, sampled one per direction.
-
-    Taking the top 13 by similarity alone returns the densest side of the
-    neighbourhood: thirteen casing and plural variants of the same word. The
-    circle is divided into sectors instead and the nearest neighbour in each
-    is kept, so the whole neighbourhood shows.
-    """
-    import torch
-    v = word_vector(tok, emb, word)
-    if v is None:
-        return []
-
-    sims = embn @ v
-    order = torch.argsort(sims, descending=True)
-
+def neighbourhood(word):
+    ids = tok.encode(" " + word, add_special_tokens=False).ids or \
+          tok.encode(word, add_special_tokens=False).ids
+    if not ids: return []
+    v = emb[ids].mean(0); n = np.linalg.norm(v)
+    if n == 0: return []
+    sims = embn @ (v / n)
     picked, seen = [], {word.lower()}
-    for idx in order.tolist():
-        w = vocab_words.get(idx)
-        if not w or w.lower() in seen:
-            continue
-        # a word is not its own neighbour, nor is its plural worth a slot
-        if w.lower().rstrip("s") == word.lower().rstrip("s"):
-            continue
-        seen.add(w.lower())
-        picked.append((idx, w, float(sims[idx])))
-        if len(picked) >= ASSOC_POOL:
-            break
-    if not picked:
-        return []
-
-    V = torch.stack([emb[i] for i, _, _ in picked])
-    P = pca2(V)
-
-    lo = min(s for _, _, s in picked)
-    hi = max(s for _, _, s in picked)
+    for idx in np.argsort(-sims):
+        w = vocab_words.get(int(idx))
+        if not w or w.lower() in seen: continue
+        # a word's own inflections are not a neighbourhood: heat, heated and
+        # heating say nothing heat does not. Variants of OTHER words are fine.
+        a, b = w.lower(), word.lower()
+        if a.startswith(b) or b.startswith(a): continue
+        seen.add(w.lower()); picked.append((int(idx), w, float(sims[idx])))
+        if len(picked) >= ASSOC_POOL: break
+    if not picked: return []
+    P = pca2(np.stack([emb[i] for i, _, _ in picked]))
+    lo = min(s for _, _, s in picked); hi = max(s for _, _, s in picked)
     span = (hi - lo) or 1.0
-
-    # one per sector, nearest first
-    sectors = {}
+    sect = {}
     for k, (idx, w, s) in enumerate(picked):
         ang = math.atan2(float(P[k][1]), float(P[k][0]))
-        sec = int((ang + math.pi) / (2 * math.pi) * ASSOC_SHOW) % ASSOC_SHOW
-        if sec not in sectors or s > sectors[sec][2]:
-            sectors[sec] = (ang, w, s)
-
+        i = int((ang + math.pi) / (2 * math.pi) * ASSOC_SHOW) % ASSOC_SHOW
+        if i not in sect or s > sect[i][2]: sect[i] = (ang, w, s)
     out = []
-    for sec in sorted(sectors):
-        ang, w, s = sectors[sec]
-        rel = (s - lo) / span                 # 1 = closest in this neighbourhood
-        r = 0.12 + (1 - rel) * 0.80           # the page reads relatedness back out of this
-        out.append({"w": w, "xy": [round(math.cos(ang) * r, 3),
-                                   round(math.sin(ang) * r, 3)]})
+    for i in sorted(sect):
+        ang, w, s = sect[i]
+        r = 0.12 + (1 - (s - lo) / span) * 0.80
+        out.append({"w": w, "xy": [round(math.cos(ang) * r, 3), round(math.sin(ang) * r, 3)]})
     return out[:ASSOC_SHOW]
 
-
-def generate(model, tok, text, seed):
-    """One forward pass per word, keeping the whole distribution at each step."""
-    import torch
-    torch.manual_seed(seed)
-
-    prompt = tok.apply_chat_template(
-        [{"role": "system", "content": SYSTEM}, {"role": "user", "content": text}],
-        add_generation_prompt=True, tokenize=False)
-    ids = tok(prompt, add_special_tokens=False, return_tensors="pt")["input_ids"]
-
-    steps, past, cur = [], None, ids
-    eos = model.config.eos_token_id
-    eos = eos if isinstance(eos, list) else [eos]
-
-    for _ in range(MAX_NEW):
-        with torch.no_grad():
-            out = model(input_ids=cur, past_key_values=past, use_cache=True)
-        past = out.past_key_values
-        logits = out.logits[0, -1].float()
-
-        probs = torch.softmax(logits, -1)
-        # nucleus sampling at temperature, over the same shortlist live.js uses
-        sl = torch.softmax(logits / TEMP, -1)
-        sv, si = torch.sort(sl, descending=True)
-        keep = int(torch.searchsorted(torch.cumsum(sv, 0), TOP_P).item()) + 1
-        pick = si[torch.multinomial(sv[:keep] / sv[:keep].sum(), 1)].item()
-
-        piece = tok.decode([pick], skip_special_tokens=False)
-        if pick in eos or (piece.startswith("<|") and piece.endswith("|>")):
-            break
-
-        top = torch.topk(logits, 60)
-        cands = []
-        for l, i in zip(top.values.tolist(), top.indices.tolist()):
-            w = tok.decode([i], skip_special_tokens=False)
-            if "�" in w:
-                continue
-            cands.append({"w": w, "p": round(float(probs[i]), 6)})
-            if len(cands) >= CAND_SHOW:
-                break
-
-        # kept per TOKEN here; grouped into words, with the word taken lifted
-        # to the front of its field, once the whole reply exists
-        steps.append({"tok": piece, "p": round(float(probs[pick]), 6),
-                      "cands": [c for c in cands if c["w"] != piece]})
-
-        cur = torch.tensor([[pick]])
-        if len(steps) >= MIN_NEW and ends_sentence("".join(s["tok"] for s in steps)):
-            break
-
-    return steps
-
-
-def capture(model, tok, emb, embn, vocab_words, text, seed):
-    import torch
+def capture(text, seed=7):
     words = [w for w in re.findall(r"[A-Za-z][A-Za-z'-]*", text) if is_typed(w)][:ASSOC_WORDS]
-    if not words:
-        raise SystemExit("no usable words in: " + text)
-
-    q = []
-    for w in words:
-        assoc = neighbourhood(tok, emb, embn, w, vocab_words)
-        if assoc:
-            q.append({"w": w, "assoc": assoc})
-    if not q:
-        raise SystemExit("no neighbourhoods for: " + text)
-
-    steps = generate(model, tok, text, seed)
-    if not steps:
-        raise SystemExit("the model said nothing for: " + text)
-
+    q = [{"w": w, "assoc": a} for w in words for a in [neighbourhood(w)] if a]
+    steps = generate(text, seed)
     said = whole_sentences("".join(s["tok"] for s in steps))
-    reply = group_words(steps)
-
-    # concepts the answer reaches for that the question never mentioned
     asked = {w.lower() for w in words}
-    emerge, seen = [], set()
-    # from the answer itself first, since those are the words it actually
-    # used, then from the ones it nearly used
-    for raw in (re.findall(r"[A-Za-z][A-Za-z'-]*", said)
-                + [c["w"] for s in steps for c in s["cands"]]):
-        w = raw.strip()
-        if not is_word(w):
-            continue
-        k = w.lower()
-        if k in asked or k in seen or k in STOP:
-            continue
-        seen.add(k)
-        emerge.append(w)
-        if len(emerge) >= EMERGE_SHOW:
-            break
-    return {"prompt": text, "q": q, "emerge": emerge[:EMERGE_SHOW],
-            "reply": reply[:REPLY_STEPS], "said": said}
-
-
-def check(g):
-    """Fail here rather than silently on the page."""
+    em, seen = [], set()
+    for raw in re.findall(r"[A-Za-z][A-Za-z'-]*", said) + \
+               [c["w"] for s in steps for c in s["cands"]]:
+        w = raw.strip(); k = w.lower()
+        if not is_word(w) or k in asked or k in seen or k in STOP: continue
+        seen.add(k); em.append(w)
+        if len(em) >= EMERGE_SHOW: break
+    g = {"prompt": text, "q": q, "emerge": em,
+         "reply": group_words(steps)[:REPLY_STEPS], "said": said}
     assert g["q"] and all(x["assoc"] for x in g["q"]), "a question word has no neighbours"
-    assert g["reply"], "no reply steps"
     for r in g["reply"]:
-        assert r["cands"] and r["cands"][0]["w"] == r["tok"], \
-            "the word taken is not first in its candidate list"
-        assert all(c["w"] == c["w"].strip() for c in r["cands"]), \
-            "a candidate still carries the tokenizer's space"
-        assert all("p" in c and "w" in c for c in r["cands"]), "a candidate is malformed"
+        assert r["cands"][0]["w"] == r["tok"], "the word taken is not first in its field"
+        assert all(c["w"] == c["w"].strip() for c in r["cands"]), "a candidate kept its space"
     for x in g["q"]:
         for a in x["assoc"]:
-            assert len(a["xy"]) == 2 and math.hypot(*a["xy"]) <= 1.0, \
-                "a neighbour sits outside the unit circle, which the page reads as relatedness"
-    assert g["said"], "no reply text"
-
-
-def load_existing():
-    if not os.path.exists(OUT):
-        return []
-    raw = open(OUT, encoding="utf-8").read()
-    i, j = raw.find("["), raw.rfind("]")
-    return json.loads(raw[i:j + 1]) if i >= 0 else []
-
-
-def main():
-    ap = argparse.ArgumentParser(description="Capture recorded questions for into-the-network/")
-    ap.add_argument("questions", nargs="+")
-    ap.add_argument("--seed", type=int, default=7, help="decode seed (default 7)")
-    ap.add_argument("--replace", action="store_true",
-                    help="re-capture questions already in seeds.js")
-    args = ap.parse_args()
-
-    try:
-        import torch
-        from transformers import AutoModelForCausalLM, AutoTokenizer
-    except ImportError:
-        sys.exit("needs torch and transformers:  pip install torch transformers")
-
-    print("loading " + MODEL + " ...", flush=True)
-    tok = AutoTokenizer.from_pretrained(MODEL)
-    model = AutoModelForCausalLM.from_pretrained(MODEL, torch_dtype=torch.float32)
-    model.eval()
-
-    emb = model.get_input_embeddings().weight.detach().float()
-    embn = emb / emb.norm(dim=1, keepdim=True).clamp(min=1e-9)
-
-    # the vocabulary, once, so neighbour lookup is not a decode per candidate
-    vocab_words = {}
-    for w, i in tok.get_vocab().items():
-        s = w.replace("Ġ", " ").strip()
-        if is_word(s):
-            vocab_words[i] = s
-    print("%d word-like tokens of %d" % (len(vocab_words), emb.shape[0]), flush=True)
-
-    seeds = load_existing()
-    have = {g["prompt"].lower(): k for k, g in enumerate(seeds)}
-
-    for text in args.questions:
-        if text.lower() in have and not args.replace:
-            print("already captured, skipping: " + text)
-            continue
-        print("capturing: " + text, flush=True)
-        g = capture(model, tok, emb, embn, vocab_words, text, args.seed)
-        check(g)
-        print("   %d words, %d reply steps, said: %s" %
-              (len(g["q"]), len(g["reply"]), g["said"][:70]), flush=True)
-        if text.lower() in have:
-            seeds[have[text.lower()]] = g
-        else:
-            have[text.lower()] = len(seeds)
-            seeds.append(g)
-
-    os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    with open(OUT, "w", encoding="utf-8") as f:
-        f.write("window.SEEDS=" + json.dumps(seeds, separators=(",", ":")) + ";\n")
-    print("wrote %s  (%d questions, %.0fKB)" %
-          (os.path.normpath(OUT), len(seeds), os.path.getsize(OUT) / 1024))
-    print("\nseeds.js is inlined into index.html at build time. Rebuild with:"
-          "\n    python build/build-into-the-network.py")
-
+            assert math.hypot(*a["xy"]) <= 1.0, "a neighbour sits outside the unit circle"
+    return g
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    ap = argparse.ArgumentParser(description=__doc__.splitlines()[1])
+    ap.add_argument("questions", nargs="+")
+    ap.add_argument("--out", default="build/into-the-network/seeds.js")
+    ap.add_argument("--seed", type=int, default=7)
+    args = ap.parse_args()
+
+    out = []
+    for text in args.questions:
+        t0 = time.time()
+        g = capture(text, args.seed)
+        out.append(g)
+        print("%-38s %5.1fs  %d words  %s" %
+              (text, time.time() - t0, len(g["q"]), g["said"][:44]), flush=True)
+    os.makedirs(os.path.dirname(args.out) or ".", exist_ok=True)
+    with open(args.out, "w", encoding="utf-8") as f:
+        f.write("window.SEEDS=" + json.dumps(out, separators=(",", ":")) + ";\n")
+    print("wrote %s  (%d questions, %.0fKB)" %
+          (args.out, len(out), os.path.getsize(args.out) / 1024))
+    print("now run:  python build/build-into-the-network.py")
