@@ -21,8 +21,17 @@ renderer.setClearColor(0x161616,1);
 const scene=new THREE.Scene();
 const cam=new THREE.PerspectiveCamera(38,16/9,1,6000);
 let DPR=Math.min(2,window.devicePixelRatio||1), VW=1000, VH=540;
+/* The sequence is laid out in world units that come out about one-to-one with
+   pixels on a 1000px stage, which is what it was built against. Positions
+   scale with the stage automatically, because they project to normalised
+   coordinates and get multiplied by the width. Anything measured in pixels
+   does not, so on a narrower stage the type stayed put while the layout
+   closed up around it and the words collided. PXS carries that scale to
+   everything drawn in pixel space. */
+let PXS=1;
 function resize(){
   VW=stageEl.clientWidth||1000; VH=stageEl.clientHeight||Math.round(VW*.54);
+  PXS=VW/1000;
   renderer.setPixelRatio(DPR); renderer.setSize(VW,VH,false);
   ov.width=Math.round(VW*DPR); ov.height=Math.round(VH*DPR);
   ov.style.width=VW+"px"; ov.style.height=VH+"px";
@@ -125,8 +134,8 @@ function labels(){
   list.sort((a,b)=>b.z-a.z);
   ctx.textAlign="center";
   for(const it of list){
-    const fs=it.n.size*11.5*it.s;
-    if(fs<4.2) continue;
+    const fs=it.n.size*11.5*it.s*PXS;
+    if(fs<4.2*PXS) continue;
     /* words on the reply line share a baseline, the way type in a chat thread
        does, so a size still easing cannot ride them up or down */
     ctx.textBaseline=it.n.baseline?"alphabetic":"middle";
@@ -159,7 +168,7 @@ function drawHits(){
     ctx.globalAlpha=cl(o*.8*cl((best-.62)/.3));
     ctx.fillStyle=(e?e.col:new THREE.Color(CLAY)).getStyle();
     ctx.beginPath();
-    ctx.arc((v.x*.5+.5)*VW,(-v.y*.5+.5)*VH,.7,0,6.2832);
+    ctx.arc((v.x*.5+.5)*VW,(-v.y*.5+.5)*VH,.7*PXS,0,6.2832);
     ctx.fill();
   }
   ctx.globalAlpha=1;
@@ -174,7 +183,7 @@ function caret(world,alpha,T){
   const y1=(-a.y*.5+.5)*VH, y2=(-b.y*.5+.5)*VH;
   ctx.globalAlpha=alpha*((Math.floor(T/330)%2)?.12:1);
   ctx.fillStyle=CLAYC;
-  ctx.fillRect((v.x*.5+.5)*VW-1.5,y1,3,y2-y1);
+  ctx.fillRect((v.x*.5+.5)*VW-1.5*PXS,y1,3*PXS,y2-y1);
   ctx.globalAlpha=1;
 }
 /* a point on the z=0 plane that projects to these screen pixels */
@@ -217,7 +226,11 @@ function frame(now){
 }
 
 /* ------------------------------------------------------------ the pieces */
-const GAP=100, RX=400, RY=150, RZ=190;
+/* The question's words sit on a line, GAP apart. Fixed at 100 that line runs
+   off the stage the moment a question has more than about seven words, so it
+   closes up for longer ones instead. */
+let GAP=100;
+const RX=400, RY=150, RZ=190;
 const LINE_Y=104, SCALE=1.05, PER=1600;
 const pct=p=> p>=.995 ? (Math.floor(p*1000)/10).toFixed(1)+"%"
             : p>=.1    ? (p*100).toFixed(0)+"%"
@@ -322,6 +335,7 @@ async function play(data){
   if(data) G=data;
   if(!G) return;
   NQ=G.q.length;
+  GAP=Math.min(100,620/Math.max(1,NQ-1));
   note();
   const me=++run;
   paused=false; $("pause").textContent="Pause";

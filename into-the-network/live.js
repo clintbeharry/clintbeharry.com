@@ -159,20 +159,26 @@ export async function load(){
     say(`${state.pct}% of ${state.file}`);
   };
 
-  for(const device of ["webgpu", "wasm"]){
+  /* q4 and q4f16 hold the same 4-bit weights. What differs is the embedding
+     table, which quantizers leave at full precision because squashing it
+     wrecks the output distribution, and which is about half the download at
+     this model size. fp16 there costs nothing visible and saves ~115MB.
+     q4 stays as the fallback: fp16 support on the wasm path is not a given,
+     and a working answer beats a smaller one. */
+  for(const [device, dtype] of [["webgpu","q4f16"], ["webgpu","q4"], ["wasm","q4"]]){
     try{
       say(`loading on ${device}`);
       state.tok   = await T.AutoTokenizer.from_pretrained(MODEL, { progress_callback: pc });
       state.model = await T.AutoModelForCausalLM.from_pretrained(MODEL,
-                      { dtype: "q4", device, progress_callback: pc });
-      state.device = device;
+                      { dtype, device, progress_callback: pc });
+      state.device = device; state.dtype = dtype;
       state.phase  = "ready";
       state.ready  = true;
       state.pct    = 100;
       say(`${device} · sampled t=${TEMP} top_p=${TOP_P} · live in this tab`);
       settle(true); return true;
     }catch(e){
-      state.error = `${device}: ${e.message}`;
+      state.error = `${device}/${dtype}: ${e.message}`;
     }
   }
   state.phase = "failed";
@@ -388,7 +394,7 @@ export async function generate(text, maxNew = MAX_NEW, onStep, onSeeds){
 
 const ASSOC_SHOW = 13;   /* neighbours kept per word, matching the captures */
 const ASSOC_POOL = 64;   /* read this many before discarding non-words */
-const ASSOC_WORDS = 9;   /* question words the sequence can seat on its line */
+const ASSOC_WORDS = 12;  /* question words the sequence can seat on its line */
 const REPLY_STEPS = 6;   /* words step five animates; the rest is printed */
 
 /* Real words only. The candidate list is full of punctuation, fragments and
@@ -399,17 +405,29 @@ const isWord = w => /^[A-Za-z][A-Za-z'-]{1,}$/.test(w);
    continues the word before it, which is how this tokenizer marks boundaries.
    The position that matters for a word is its LAST token: that is the row that
    predicts what comes after the whole word rather than after its first half. */
+/* Grouping tokens by "does this piece start with a space" drops words whose
+   pieces do not follow that rule, and "What makes bread rise?" came back as
+   three words rather than four. So the span is decoded back into text, each
+   token's character range is kept, and the words are found in the TEXT. Every
+   word the person typed is then guaranteed a row, whatever the tokenizer did
+   to it. The row that matters is the one holding the word's LAST character:
+   that is the position predicting what follows the whole word. */
 function wordsOf(tok, ids, span){
-  const out = [];
+  const piece = [];
+  let text = "";
   for(let i = span.start; i < span.end; i++){
-    const piece = tok.decode([ids[i]], { skip_special_tokens:false });
-    if(!piece) continue;
-    if(out.length && !/^\s/.test(piece)) out[out.length-1].push({ i, piece });
-    else out.push([{ i, piece }]);
+    const s = tok.decode([ids[i]], { skip_special_tokens:false });
+    piece.push({ i, a:text.length, b:text.length + s.length });
+    text += s;
   }
-  return out
-    .map(g => ({ w: g.map(p => p.piece).join("").trim(), at: g[g.length-1].i }))
-    .filter(g => isWord(g.w));
+  const out = [];
+  for(const m of text.matchAll(/[A-Za-z][A-Za-z'-]*/g)){
+    if(!isWord(m[0])) continue;
+    const end = m.index + m[0].length - 1;
+    const p = piece.find(p => end >= p.a && end < p.b);
+    if(p) out.push({ w: m[0], at: p.i });
+  }
+  return out;
 }
 
 /* Two components, by power iteration on the covariance. The feature space is
@@ -522,18 +540,40 @@ export async function associate(text){
   return { q, truncated };
 }
 
-/* live steps, in the shape the sequence reads */
+/* Tokens are not words. "Bread" is two of them, and animating six tokens put
+   "B" and "read" on the line as separate words, which reads as a broken page
+   rather than as how tokenizers work. Steps are grouped into words first, and
+   the sequence animates six WORDS.
+
+   A word's field is its FIRST token's distribution, because that is the
+   choice that committed to the word. The alternatives in that field stay as
+   the model saw them, which is to say as tokens; only the winner is shown
+   whole. */
+function words(steps){
+  const out = [];
+  for(const st of steps){
+    const opens = !out.length || /^[\s]/.test(st.tok) || /^[,.;:!?)\]]/.test(st.tok);
+    if(opens) out.push([st]); else out[out.length-1].push(st);
+  }
+  return out.map(g => ({ text: g.map(s => s.tok).join(""), first: g[0] }));
+}
+
 export function toReply(steps, n = REPLY_STEPS){
-  return steps.slice(0, n).map(st => {
+  return words(steps).slice(0, n).map(g => {
+    const st = g.first;
     const P = st.cands.map(([w, l]) => ({ w, p: +(st.p * Math.exp(l - st.l)).toFixed(6) }));
     /* The sequence treats cands[0] as the word taken. Sampling means that is
        not always the favourite, so the pick is lifted to the front rather
        than assumed to be there. */
     const i = P.findIndex(c => c.w === st.tok);
-    const pick = i >= 0 ? P.splice(i, 1)[0] : { w: st.tok, p: st.p };
+    if(i >= 0) P.splice(i, 1);
     P.sort((a, b) => b.p - a.p);
-    return { tok: st.tok, cands: [pick, ...P].slice(0, 13) };
+    const whole = g.text.trim() || g.text;
+    return { tok: whole, cands: [{ w: whole, p: st.p }, ...P].slice(0, 13) };
   });
 }
+
+/* the whole reply, as text */
+export const sayWhat = steps => steps.map(s => s.tok).join("").trim();
 
 export const LIMITS = { REPLY_STEPS, ASSOC_WORDS };
