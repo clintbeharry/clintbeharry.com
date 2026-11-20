@@ -49,11 +49,54 @@ REPLY_STEPS  = 6     # words step five animates; the rest is printed under it
 CAND_SHOW    = 13    # candidates kept per reply step
 EMERGE_SHOW  = 12
 
+STOP = set("""a an the is are was were be been being am of to in on at by for with from into
+over under about as it its this that these those there here and or but not no so such then than
+you your yours we our they them their he she his her i me my if when while how why what which who
+whom can could will would shall should may might must do does did done have has had get got make
+makes made very just only also more most other others some any each all both much many""".split())
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT  = os.path.join(HERE, "into-the-network", "seeds.js")   # a build source, not served
 
-WORD = re.compile(r"^[A-Za-z][A-Za-z'-]{1,}$")
-is_word = lambda w: bool(WORD.match(w))
+WORD  = re.compile(r"^[A-Za-z][A-Za-z'-]{1,}$")   # neighbours and concepts
+TYPED = re.compile(r"^[A-Za-z][A-Za-z'-]*$")      # the person's own words
+is_word  = lambda w: bool(WORD.match(w))
+# "a" and "I" are poor neighbours but they are still words somebody typed, and
+# a question reaching the screen as "What is prime number" is simply wrong.
+is_typed = lambda w: bool(TYPED.match(w))
+
+
+def whole_sentences(text):
+    """Back up to the last finished sentence. The decode loop stops on one when
+       it can, but a reply that runs into the token cap stops wherever it is,
+       and a dangling clause reads as a broken page rather than an answer."""
+    m = list(re.finditer(r"""[.!?]["')\]]?(?=\s|$)""", text))
+    return text[:m[-1].end()].strip() if m else text.strip()
+
+
+def group_words(steps):
+    """Tokens are not words. "Bread" is two of them, and animating six tokens
+       put "B" and "read" on the line as separate words. A word's field is its
+       FIRST token's distribution, because that is the choice that committed
+       to the word."""
+    runs = []
+    for st in steps:
+        opens = not runs or st["tok"][:1].isspace() or st["tok"][:1] in ",.;:!?)]"
+        if opens: runs.append([st])
+        else: runs[-1].append(st)
+    out = []
+    for g in runs:
+        first = g[0]
+        text = "".join(x["tok"] for x in g).strip() or first["tok"]
+        seen, field = {text.lower()}, []
+        for c in first["cands"]:
+            w = c["w"].strip() or c["w"]          # the tokenizer's leading space
+            if w.lower() in seen: continue        # which, trimmed, collides
+            seen.add(w.lower())
+            field.append({"w": w, "p": c["p"]})
+        out.append({"tok": text,
+                    "cands": ([{"w": text, "p": first["p"]}] + field)[:CAND_SHOW]})
+    return out
 
 
 def ends_sentence(text):
@@ -185,11 +228,10 @@ def generate(model, tok, text, seed):
             if len(cands) >= CAND_SHOW:
                 break
 
-        # the page treats cands[0] as the word taken, and sampling means that
-        # is not always the favourite
-        chosen = {"w": piece, "p": round(float(probs[pick]), 6)}
-        cands = [chosen] + [c for c in cands if c["w"] != piece][: CAND_SHOW - 1]
-        steps.append({"tok": piece, "cands": cands})
+        # kept per TOKEN here; grouped into words, with the word taken lifted
+        # to the front of its field, once the whole reply exists
+        steps.append({"tok": piece, "p": round(float(probs[pick]), 6),
+                      "cands": [c for c in cands if c["w"] != piece]})
 
         cur = torch.tensor([[pick]])
         if len(steps) >= MIN_NEW and ends_sentence("".join(s["tok"] for s in steps)):
@@ -200,7 +242,7 @@ def generate(model, tok, text, seed):
 
 def capture(model, tok, emb, embn, vocab_words, text, seed):
     import torch
-    words = [w for w in re.findall(r"[A-Za-z][A-Za-z'-]*", text) if is_word(w)][:ASSOC_WORDS]
+    words = [w for w in re.findall(r"[A-Za-z][A-Za-z'-]*", text) if is_typed(w)][:ASSOC_WORDS]
     if not words:
         raise SystemExit("no usable words in: " + text)
 
@@ -216,23 +258,28 @@ def capture(model, tok, emb, embn, vocab_words, text, seed):
     if not steps:
         raise SystemExit("the model said nothing for: " + text)
 
-    said = "".join(s["tok"] for s in steps).strip()
+    said = whole_sentences("".join(s["tok"] for s in steps))
+    reply = group_words(steps)
 
     # concepts the answer reaches for that the question never mentioned
     asked = {w.lower() for w in words}
     emerge, seen = [], set()
-    for s in steps:
-        for c in s["cands"]:
-            w = c["w"].strip()
-            if not is_word(w):
-                continue
-            k = w.lower()
-            if k in asked or k in seen:
-                continue
-            seen.add(k)
-            emerge.append(w)
+    # from the answer itself first, since those are the words it actually
+    # used, then from the ones it nearly used
+    for raw in (re.findall(r"[A-Za-z][A-Za-z'-]*", said)
+                + [c["w"] for s in steps for c in s["cands"]]):
+        w = raw.strip()
+        if not is_word(w):
+            continue
+        k = w.lower()
+        if k in asked or k in seen or k in STOP:
+            continue
+        seen.add(k)
+        emerge.append(w)
+        if len(emerge) >= EMERGE_SHOW:
+            break
     return {"prompt": text, "q": q, "emerge": emerge[:EMERGE_SHOW],
-            "reply": steps[:REPLY_STEPS], "said": said}
+            "reply": reply[:REPLY_STEPS], "said": said}
 
 
 def check(g):
@@ -242,6 +289,8 @@ def check(g):
     for r in g["reply"]:
         assert r["cands"] and r["cands"][0]["w"] == r["tok"], \
             "the word taken is not first in its candidate list"
+        assert all(c["w"] == c["w"].strip() for c in r["cands"]), \
+            "a candidate still carries the tokenizer's space"
         assert all("p" in c and "w" in c for c in r["cands"]), "a candidate is malformed"
     for x in g["q"]:
         for a in x["assoc"]:
