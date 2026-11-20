@@ -40,13 +40,37 @@ body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
   line-height:1.5;opacity:0;transition:opacity .45s ease}
 .q b{font-weight:400}
 
-.turn.bot .who{display:flex;align-items:center;gap:9px;margin:0 0 11px;
-  font-family:var(--mono);font-size:11px;color:var(--dimmer)}
-.turn.bot .who::before{content:"";flex:0 0 auto;width:13px;height:13px;
-  border-radius:50%;background:var(--clay)}
-.turn.bot.working .who::before{animation:breathe 1.75s ease-in-out infinite}
-@keyframes breathe{0%,100%{transform:scale(.84);filter:brightness(.95)}
-                   50%{transform:scale(1);filter:brightness(1.07)}}
+.turn.bot .who{display:flex;align-items:center;gap:10px;margin:0 0 13px;
+  font-family:var(--mono);font-size:11.5px;min-height:14px}
+
+/* The thinking mark. Three dots is what every chat uses to say it is working,
+   and it belongs to none of them. Deliberately not anyone's logo. */
+.think{display:inline-flex;gap:4px;align-items:center;flex:0 0 auto;
+  transition:opacity .55s ease}
+.think b{width:5px;height:5px;border-radius:50%;background:var(--clay);
+  animation:thinkpulse 1.35s ease-in-out infinite}
+.think b:nth-child(2){animation-delay:.17s}
+.think b:nth-child(3){animation-delay:.34s}
+@keyframes thinkpulse{0%,72%,100%{opacity:.26;transform:scale(.78)}
+                      34%{opacity:1;transform:scale(1)}}
+/* once there is a cursor, the page is answering rather than working out what
+   to answer, so the mark hands over to it */
+.turn.bot.answering .think{opacity:0}
+
+/* What the machine is doing, with a pulse travelling along it so the line
+   itself reads as work in progress. */
+#hud{letter-spacing:.02em;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;
+  background:linear-gradient(90deg,
+    var(--dimmer) 0%, var(--dimmer) 38%, #ffffff 50%, var(--dimmer) 62%, var(--dimmer) 100%);
+  background-size:260% 100%;
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  animation:sweep 2.8s linear infinite;transition:opacity .5s ease}
+@keyframes sweep{0%{background-position:130% 0}100%{background-position:-30% 0}}
+.turn.bot.spoken #hud{opacity:0}
+@media (prefers-reduced-motion:reduce){
+  #hud{animation:none;background:none;color:var(--dimmer)}
+}
 .turn.bot .answer{margin:14px 0 0;white-space:pre-wrap;word-break:break-word}
 
 /* The visualisation sits where a chat puts its thinking, and sits ON the
@@ -58,9 +82,11 @@ body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
 .stage canvas{display:block;width:100%;height:100%;position:absolute;inset:0}
 .stage .pad{display:block;width:100%}
 #ov{pointer-events:none}
-.hud{position:absolute;left:15px;top:13px;font-family:var(--mono);font-size:11.5px;
-  color:var(--clay);pointer-events:none;letter-spacing:.02em;max-width:72%}
-.hud .sub{color:var(--dimmer);display:block;margin-top:4px;letter-spacing:0;font-size:11px}
+/* The caption used to be pinned inside the stage. It lives in the message's
+   own line now, beside the thinking mark, so it is laid out rather than
+   placed: absolute positioning left it stuck to the corner of the window. */
+.hud{font-family:var(--mono);font-size:11.5px;pointer-events:none;
+  letter-spacing:.02em;min-width:0}
 /* parked offscreen until a turn claims it, at a real size so the canvas
    does not have to be resized from zero when it lands */
 #park{position:fixed;left:-10000px;top:0;width:1000px;height:560px}
@@ -79,7 +105,11 @@ body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
    answer, not an answer with the rejected words written through it. */
 .reply.done{--band:1.65em;
   transition:line-height .6s cubic-bezier(.3,0,.2,1),margin-top .6s cubic-bezier(.3,0,.2,1)}
-.reply.done .fan{opacity:0;transition:opacity .4s ease}
+/* Faded out is not gone: an invisible field is still part of the text, so
+   selecting the finished answer copied every rejected word along with it.
+   Hidden after the fade, it leaves the sentence by itself. */
+.reply.done .fan{opacity:0;visibility:hidden;
+  transition:opacity .4s ease,visibility 0s linear .4s}
 .reply.done .fan i{opacity:0;transition:opacity .4s ease}
 /* and the room each word was holding for its field is given back, so what is
    left reads as a sentence rather than as a timing diagram */
@@ -91,6 +121,13 @@ body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
   transition:opacity .16s ease,color .3s ease}
 .tok.set .word{opacity:1}
 .tok.set .word{color:var(--ink)}
+
+/* The lines back to the word. Each candidate was reached from the word above
+   it, and without them the field reads as a list that happens to be sitting
+   there rather than as a set of things one word led to. */
+.wires{position:absolute;left:0;top:0;overflow:visible;pointer-events:none;
+  opacity:0;transition:opacity .26s ease}
+.wires.in{opacity:1}
 
 /* the field hangs below the word it belongs to */
 .fan{position:absolute;left:50%;transform:translateX(-50%);
@@ -450,20 +487,21 @@ const pct=p=> p>=.995 ? (Math.floor(p*1000)/10).toFixed(1)+"%"
             : p>=.1    ? (p*100).toFixed(0)+"%"
             : p>=.001  ? (p*100).toFixed(1)+"%"
             : p>=.00005? (p*100).toFixed(2)+"%" : "<0.01%";
-function seats(){
-  ctx.font="18px "+FONT;
-  const w=G.reply.map(r=>ctx.measureText(r.tok).width*SCALE);
-  const gaps=G.reply.map((r,i)=>/^[,.;:!?]/.test((G.reply[i+1]||{}).tok||"")?1:5);
-  const total=w.reduce((a,b)=>a+b,0)+gaps.slice(0,-1).reduce((a,b)=>a+b,0);
-  let x=-total/2; const o=[];
-  G.reply.forEach((r,i)=>{ o.push({x:x+w[i]/2,w:w[i]}); x+=w[i]+gaps[i]; });
-  return o;
-}
-let S=null, CARET=V3(-150,LINE_Y,0);
+/* Where the network folds down to. This used to be derived from the reply's
+   first word, back when the reply was drawn here as a line of 3D words: the
+   caret sat just left of it. The reply is written in the thread now, and the
+   line it was measured from grew from six words to the whole answer, which
+   pushed that measurement clean off the side of the stage. Nothing in the
+   canvas depends on the reply any more, so the fold lands in the middle. */
+let CARET=V3(0,LINE_Y,0);
 
-function hud(main,sub){
-  $("hud").style.color=ACCC;
-  $("hud").innerHTML=main+(sub?"<span class='sub'>"+sub+"</span>":"");
+/* One line, outside the stage, next to the thinking mark. It used to be two
+   lines inside the frame narrating the animation; what belongs beside a
+   loading indicator is what the machine is doing, not what the picture is
+   doing. */
+function hud(main){
+  const h=$("hud"); if(!h) return;
+  h.textContent=main||"";
 }
 
 /* =================================================================== build */
@@ -557,8 +595,7 @@ async function play(data){
   lineMat.blending=THREE.AdditiveBlending; lineMat.needsUpdate=true;
   CAMR=620; CAMA=0; CAMB=0; CAMY=0; LOOK=V3(0,0,0); BOXR=[RX,RY,RZ];
   resize();
-  S=seats();
-  CARET=V3(S[0].x-S[0].w/2-9,LINE_Y,0);
+  CARET=V3(0,LINE_Y,0);
   const K=buildCloud();
 
   /* the question, as it was typed */
@@ -571,7 +608,7 @@ async function play(data){
 
   /* ---------- 1 · the words come across ---------- */
   $("step").textContent="1 / 5";
-  hud("1 · your words come across","they leave the message and enter the space the model holds them in");
+  hud("tokenizing the prompt");
   const sr=stageEl.getBoundingClientRect();
   words.forEach((n,i)=>{
     const mk=marks.find(b=>b.textContent.trim()===recs[i].w)||marks[i];
@@ -591,8 +628,7 @@ async function play(data){
 
   /* ---------- 2 · each word inside its neighbourhood ---------- */
   $("step").textContent="2 / 5";
-  hud("2 · each word sits in a neighbourhood",
-      "depth is relatedness: a close neighbour comes toward you, a long shot recedes");
+  hud("looking up each token's embedding");
   /* the ten closest show here; the rest of each neighbourhood joins the cloud */
   const shown=new Map();
   G.q.forEach((d,i)=>{
@@ -617,8 +653,7 @@ async function play(data){
   await sleep(900); if(me!==run) return;
 
   /* ---------- into the box ---------- */
-  hud("the same words, in the space that holds them",
-      "every neighbourhood at once, and the concepts the model reached for while answering");
+  hud("960 dimensions, projected down to 3");
   /* the rest of the structure, built now and revealed by the move */
   const live=recs.map((r,j)=>j);
   for(let k=0;k<K;k++){
@@ -683,15 +718,12 @@ async function play(data){
 
   /* ---------- 3 · the same space, along different axes ---------- */
   $("step").textContent="3 / 5";
+  /* What the pass is doing, in the fewest words that are still true. */
   const NAMES=[
-    ["associating across dimensions 1-3",
-     "the coarsest axes of the space. Words near each other here share the broadest structure"],
-    ["associating across dimensions 4-6",
-     "three different axes, so a different set of words falls near each other"],
-    ["associating across dimensions 7-9",
-     "finer distinctions, and some words carry no reading on these axes at all"],
-    ["associating across dimensions 10-12",
-     "the last axes still holding signal, where the rarest associations live"]
+    "projecting components 1-3",
+    "projecting components 4-6",
+    "projecting components 7-9",
+    "projecting components 10-12",
   ];
   const MOVE=1300, WIRE_T=2200, REST=700;
   /* How long one connection takes to flare and settle. It has to be short
@@ -777,15 +809,14 @@ async function play(data){
       });
       const f=seg(tm,MOVE*.55,MOVE*1.08);
       const nm=NAMES[f>.5?nx:i];
-      hud(nm[0],nm[1]);
+      hud(nm);
     });
     if(me!==run) return;
   }
 
   /* ---------- 4 · compressed into the cursor ---------- */
   $("step").textContent="4 / 5";
-  hud("4 · all of that, compressed into the cursor",
-      "the network does not leave and let a cursor appear; it becomes the cursor");
+  hud("32 layers, one forward pass");
   const R4=nodes.concat(cube);   /* the frame folds away with its contents */
   const xs=R4.map(n=>n.h.x), lo=Math.min.apply(null,xs), hi=Math.max.apply(null,xs);
   const ys=R4.map(n=>n.h.y), ylo=Math.min.apply(null,ys), yhi=Math.max.apply(null,ys);
@@ -809,6 +840,7 @@ async function play(data){
   const col0=EDGES.map(e=>e.col.clone());
   const warm0=R4.map(n=>n.warm===undefined?(n.clay?1:0):n.warm);
   const CC=new THREE.Color(CLAY);
+  let said=0;
   await clock(3400,(_,t)=>{
     const close=io(seg(t,1700,2750));
     const packed=io(seg(t,800,2200));
@@ -846,6 +878,10 @@ async function play(data){
       e.col.copy(col0[ei]).lerp(CC,warm);
       e.op=e.op0*(1-gone)*(1-.45*packed)*(e.stub?1-bye:1);
     });
+    /* The moment the cursor exists, the page stops saying it is thinking:
+       the thinking mark hands over to the cursor, because from here it is
+       answering rather than working out what to answer. */
+    if(t>2450 && !said){ said=1; if(window.onCursor) window.onCursor(); }
     LATE=()=>{ if(t>2450) caret(CARET,seg(t,2450,2720),t); };
   });
   if(me!==run) return;
@@ -866,7 +902,7 @@ async function play(data){
      page coordinates, so the writing can begin from exactly the spot the
      network became. */
   $("step").textContent="writing";
-  hud("", "");
+  hud("sampling from 49,152 candidates");
   const v=CARET.clone().project(cam);
   const r=stageEl.getBoundingClientRect();
   return { x:r.left+(v.x*.5+.5)*r.width, y:r.top+(-v.y*.5+.5)*r.height };
@@ -939,12 +975,21 @@ function turn(role){
   if(role === "bot"){
     const w = document.createElement("p");
     w.className = "who";
+    const mark = document.createElement("span");
+    mark.className = "think";
+    mark.innerHTML = "<b></b><b></b><b></b>";
+    w.appendChild(mark);
     t.appendChild(w);
+    const h = $("hud");
+    if(h){ claim(h, w); h.textContent = ""; }
   }
   log.appendChild(t); scroll();
   return t;
 }
-const who = (t, s) => { t.querySelector(".who").textContent = s; };
+/* The caption, not the whole line. Setting textContent on .who wiped out the
+   thinking mark and the caption element sitting inside it, which is how the
+   mark vanished and every later turn found no #hud to write to. */
+const who = (t, s) => { const h = t.querySelector("#hud"); if(h) h.textContent = s; };
 
 /* The two single elements, handed from turn to turn. What they leave behind
    is a copy, so scrolling back still shows what was asked. */
@@ -1061,6 +1106,7 @@ async function ask(text){
   claim(st, bt);
   bt.classList.remove("working");
   who(bt, "");
+  answering = bt;
   const at = await window.playRun(G);
   if(my !== token) return;
   await collapse($("stage"));
@@ -1069,9 +1115,15 @@ async function ask(text){
   if(my !== token) return;
   /* the controls belong under the finished message, the way a chat puts copy
      and retry there, not above an answer that has not been written yet */
+  bt.classList.add("spoken");       /* the caption has nothing left to report */
   actions(bt);
   scroll();
 }
+
+/* The engine says when the cursor exists. From that moment the page is
+   answering, not working out what to answer. */
+let answering = null;
+window.onCursor = () => { if(answering) answering.classList.add("answering"); };
 
 /* The sequence folded the whole network into a blinking cursor. The cursor
    is what writes, so the stage closes rather than sitting there as a spent
@@ -1128,6 +1180,37 @@ function buildTok(step){
   return { tok, fan, word };
 }
 
+/* One line from the word to each thing it might have been. Drawn after the
+   token is in the document, because where the rows land depends on how wide
+   their own text is, and that is only known once laid out. */
+const NS = "http://www.w3.org/2000/svg";
+function wires(tok, fan, step){
+  const tb = tok.getBoundingClientRect();
+  const rows = [...fan.children];
+  if(!rows.length || !tb.width) return null;
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("class", "wires");
+  const ox = tb.width / 2, oy = tb.height;      /* the word's bottom centre */
+  let deepest = 0;
+  rows.forEach((row, i) => {
+    const rb = row.getBoundingClientRect();
+    const x = rb.left - tb.left, y = rb.top - tb.top + rb.height / 2;
+    deepest = Math.max(deepest, y);
+    const ln = document.createElementNS(NS, "line");
+    ln.setAttribute("x1", ox.toFixed(1)); ln.setAttribute("y1", oy.toFixed(1));
+    ln.setAttribute("x2", (x - 3).toFixed(1)); ln.setAttribute("y2", y.toFixed(1));
+    const p = step.cands[i] ? step.cands[i].p : 0;
+    ln.setAttribute("stroke", i === 0 ? "#d97757" : "#8a8a8a");
+    ln.setAttribute("stroke-width", (0.6 + Math.sqrt(p) * 1.1).toFixed(2));
+    ln.setAttribute("stroke-opacity", (0.14 + Math.sqrt(p) * 0.55).toFixed(2));
+    svg.appendChild(ln);
+  });
+  svg.setAttribute("width", Math.max(1, tb.width));
+  svg.setAttribute("height", Math.max(1, deepest + 4));
+  tok.appendChild(svg);
+  return svg;
+}
+
 /* The reply, written into the thread a word at a time. Pace carries meaning:
    a word the model was sure of barely pauses, an uncertain one holds long
    enough that its field can be read. */
@@ -1150,7 +1233,9 @@ async function writeReply(bot, G, my, at){
     p.insertBefore(tok, caret);
     scroll();
 
+    const w = wires(tok, fan, step);
     fan.classList.add("in");
+    if(w) w.classList.add("in");
     await pause(80);
     if(my !== token) return;
     await pause(Math.min(680, Math.max(70, bitsOf(step.cands[0].p) * 155)));
@@ -1173,6 +1258,7 @@ async function writeReply(bot, G, my, at){
     if(my !== token) return;
     tok.classList.add("set");
     await pause(40);
+    if(w) w.classList.remove("in");
     fan.classList.remove("in", "out");
     fan.classList.add("rest");
     [...fan.children].forEach((c, i) => { if(i && i < 4) c.classList.add("keep"); });

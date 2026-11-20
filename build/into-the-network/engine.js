@@ -236,20 +236,21 @@ const pct=p=> p>=.995 ? (Math.floor(p*1000)/10).toFixed(1)+"%"
             : p>=.1    ? (p*100).toFixed(0)+"%"
             : p>=.001  ? (p*100).toFixed(1)+"%"
             : p>=.00005? (p*100).toFixed(2)+"%" : "<0.01%";
-function seats(){
-  ctx.font="18px "+FONT;
-  const w=G.reply.map(r=>ctx.measureText(r.tok).width*SCALE);
-  const gaps=G.reply.map((r,i)=>/^[,.;:!?]/.test((G.reply[i+1]||{}).tok||"")?1:5);
-  const total=w.reduce((a,b)=>a+b,0)+gaps.slice(0,-1).reduce((a,b)=>a+b,0);
-  let x=-total/2; const o=[];
-  G.reply.forEach((r,i)=>{ o.push({x:x+w[i]/2,w:w[i]}); x+=w[i]+gaps[i]; });
-  return o;
-}
-let S=null, CARET=V3(-150,LINE_Y,0);
+/* Where the network folds down to. This used to be derived from the reply's
+   first word, back when the reply was drawn here as a line of 3D words: the
+   caret sat just left of it. The reply is written in the thread now, and the
+   line it was measured from grew from six words to the whole answer, which
+   pushed that measurement clean off the side of the stage. Nothing in the
+   canvas depends on the reply any more, so the fold lands in the middle. */
+let CARET=V3(0,LINE_Y,0);
 
-function hud(main,sub){
-  $("hud").style.color=ACCC;
-  $("hud").innerHTML=main+(sub?"<span class='sub'>"+sub+"</span>":"");
+/* One line, outside the stage, next to the thinking mark. It used to be two
+   lines inside the frame narrating the animation; what belongs beside a
+   loading indicator is what the machine is doing, not what the picture is
+   doing. */
+function hud(main){
+  const h=$("hud"); if(!h) return;
+  h.textContent=main||"";
 }
 
 /* =================================================================== build */
@@ -343,8 +344,7 @@ async function play(data){
   lineMat.blending=THREE.AdditiveBlending; lineMat.needsUpdate=true;
   CAMR=620; CAMA=0; CAMB=0; CAMY=0; LOOK=V3(0,0,0); BOXR=[RX,RY,RZ];
   resize();
-  S=seats();
-  CARET=V3(S[0].x-S[0].w/2-9,LINE_Y,0);
+  CARET=V3(0,LINE_Y,0);
   const K=buildCloud();
 
   /* the question, as it was typed */
@@ -357,7 +357,7 @@ async function play(data){
 
   /* ---------- 1 · the words come across ---------- */
   $("step").textContent="1 / 5";
-  hud("1 · your words come across","they leave the message and enter the space the model holds them in");
+  hud("tokenizing the prompt");
   const sr=stageEl.getBoundingClientRect();
   words.forEach((n,i)=>{
     const mk=marks.find(b=>b.textContent.trim()===recs[i].w)||marks[i];
@@ -377,8 +377,7 @@ async function play(data){
 
   /* ---------- 2 · each word inside its neighbourhood ---------- */
   $("step").textContent="2 / 5";
-  hud("2 · each word sits in a neighbourhood",
-      "depth is relatedness: a close neighbour comes toward you, a long shot recedes");
+  hud("looking up each token's embedding");
   /* the ten closest show here; the rest of each neighbourhood joins the cloud */
   const shown=new Map();
   G.q.forEach((d,i)=>{
@@ -403,8 +402,7 @@ async function play(data){
   await sleep(900); if(me!==run) return;
 
   /* ---------- into the box ---------- */
-  hud("the same words, in the space that holds them",
-      "every neighbourhood at once, and the concepts the model reached for while answering");
+  hud("960 dimensions, projected down to 3");
   /* the rest of the structure, built now and revealed by the move */
   const live=recs.map((r,j)=>j);
   for(let k=0;k<K;k++){
@@ -469,15 +467,12 @@ async function play(data){
 
   /* ---------- 3 · the same space, along different axes ---------- */
   $("step").textContent="3 / 5";
+  /* What the pass is doing, in the fewest words that are still true. */
   const NAMES=[
-    ["associating across dimensions 1-3",
-     "the coarsest axes of the space. Words near each other here share the broadest structure"],
-    ["associating across dimensions 4-6",
-     "three different axes, so a different set of words falls near each other"],
-    ["associating across dimensions 7-9",
-     "finer distinctions, and some words carry no reading on these axes at all"],
-    ["associating across dimensions 10-12",
-     "the last axes still holding signal, where the rarest associations live"]
+    "projecting components 1-3",
+    "projecting components 4-6",
+    "projecting components 7-9",
+    "projecting components 10-12",
   ];
   const MOVE=1300, WIRE_T=2200, REST=700;
   /* How long one connection takes to flare and settle. It has to be short
@@ -563,15 +558,14 @@ async function play(data){
       });
       const f=seg(tm,MOVE*.55,MOVE*1.08);
       const nm=NAMES[f>.5?nx:i];
-      hud(nm[0],nm[1]);
+      hud(nm);
     });
     if(me!==run) return;
   }
 
   /* ---------- 4 · compressed into the cursor ---------- */
   $("step").textContent="4 / 5";
-  hud("4 · all of that, compressed into the cursor",
-      "the network does not leave and let a cursor appear; it becomes the cursor");
+  hud("32 layers, one forward pass");
   const R4=nodes.concat(cube);   /* the frame folds away with its contents */
   const xs=R4.map(n=>n.h.x), lo=Math.min.apply(null,xs), hi=Math.max.apply(null,xs);
   const ys=R4.map(n=>n.h.y), ylo=Math.min.apply(null,ys), yhi=Math.max.apply(null,ys);
@@ -595,6 +589,7 @@ async function play(data){
   const col0=EDGES.map(e=>e.col.clone());
   const warm0=R4.map(n=>n.warm===undefined?(n.clay?1:0):n.warm);
   const CC=new THREE.Color(CLAY);
+  let said=0;
   await clock(3400,(_,t)=>{
     const close=io(seg(t,1700,2750));
     const packed=io(seg(t,800,2200));
@@ -632,6 +627,10 @@ async function play(data){
       e.col.copy(col0[ei]).lerp(CC,warm);
       e.op=e.op0*(1-gone)*(1-.45*packed)*(e.stub?1-bye:1);
     });
+    /* The moment the cursor exists, the page stops saying it is thinking:
+       the thinking mark hands over to the cursor, because from here it is
+       answering rather than working out what to answer. */
+    if(t>2450 && !said){ said=1; if(window.onCursor) window.onCursor(); }
     LATE=()=>{ if(t>2450) caret(CARET,seg(t,2450,2720),t); };
   });
   if(me!==run) return;
@@ -652,7 +651,7 @@ async function play(data){
      page coordinates, so the writing can begin from exactly the spot the
      network became. */
   $("step").textContent="writing";
-  hud("", "");
+  hud("sampling from 49,152 candidates");
   const v=CARET.clone().project(cam);
   const r=stageEl.getBoundingClientRect();
   return { x:r.left+(v.x*.5+.5)*r.width, y:r.top+(-v.y*.5+.5)*r.height };

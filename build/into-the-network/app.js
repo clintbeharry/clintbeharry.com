@@ -33,12 +33,21 @@ function turn(role){
   if(role === "bot"){
     const w = document.createElement("p");
     w.className = "who";
+    const mark = document.createElement("span");
+    mark.className = "think";
+    mark.innerHTML = "<b></b><b></b><b></b>";
+    w.appendChild(mark);
     t.appendChild(w);
+    const h = $("hud");
+    if(h){ claim(h, w); h.textContent = ""; }
   }
   log.appendChild(t); scroll();
   return t;
 }
-const who = (t, s) => { t.querySelector(".who").textContent = s; };
+/* The caption, not the whole line. Setting textContent on .who wiped out the
+   thinking mark and the caption element sitting inside it, which is how the
+   mark vanished and every later turn found no #hud to write to. */
+const who = (t, s) => { const h = t.querySelector("#hud"); if(h) h.textContent = s; };
 
 /* The two single elements, handed from turn to turn. What they leave behind
    is a copy, so scrolling back still shows what was asked. */
@@ -155,6 +164,7 @@ async function ask(text){
   claim(st, bt);
   bt.classList.remove("working");
   who(bt, "");
+  answering = bt;
   const at = await window.playRun(G);
   if(my !== token) return;
   await collapse($("stage"));
@@ -163,9 +173,15 @@ async function ask(text){
   if(my !== token) return;
   /* the controls belong under the finished message, the way a chat puts copy
      and retry there, not above an answer that has not been written yet */
+  bt.classList.add("spoken");       /* the caption has nothing left to report */
   actions(bt);
   scroll();
 }
+
+/* The engine says when the cursor exists. From that moment the page is
+   answering, not working out what to answer. */
+let answering = null;
+window.onCursor = () => { if(answering) answering.classList.add("answering"); };
 
 /* The sequence folded the whole network into a blinking cursor. The cursor
    is what writes, so the stage closes rather than sitting there as a spent
@@ -222,6 +238,37 @@ function buildTok(step){
   return { tok, fan, word };
 }
 
+/* One line from the word to each thing it might have been. Drawn after the
+   token is in the document, because where the rows land depends on how wide
+   their own text is, and that is only known once laid out. */
+const NS = "http://www.w3.org/2000/svg";
+function wires(tok, fan, step){
+  const tb = tok.getBoundingClientRect();
+  const rows = [...fan.children];
+  if(!rows.length || !tb.width) return null;
+  const svg = document.createElementNS(NS, "svg");
+  svg.setAttribute("class", "wires");
+  const ox = tb.width / 2, oy = tb.height;      /* the word's bottom centre */
+  let deepest = 0;
+  rows.forEach((row, i) => {
+    const rb = row.getBoundingClientRect();
+    const x = rb.left - tb.left, y = rb.top - tb.top + rb.height / 2;
+    deepest = Math.max(deepest, y);
+    const ln = document.createElementNS(NS, "line");
+    ln.setAttribute("x1", ox.toFixed(1)); ln.setAttribute("y1", oy.toFixed(1));
+    ln.setAttribute("x2", (x - 3).toFixed(1)); ln.setAttribute("y2", y.toFixed(1));
+    const p = step.cands[i] ? step.cands[i].p : 0;
+    ln.setAttribute("stroke", i === 0 ? "#d97757" : "#8a8a8a");
+    ln.setAttribute("stroke-width", (0.6 + Math.sqrt(p) * 1.1).toFixed(2));
+    ln.setAttribute("stroke-opacity", (0.14 + Math.sqrt(p) * 0.55).toFixed(2));
+    svg.appendChild(ln);
+  });
+  svg.setAttribute("width", Math.max(1, tb.width));
+  svg.setAttribute("height", Math.max(1, deepest + 4));
+  tok.appendChild(svg);
+  return svg;
+}
+
 /* The reply, written into the thread a word at a time. Pace carries meaning:
    a word the model was sure of barely pauses, an uncertain one holds long
    enough that its field can be read. */
@@ -244,7 +291,9 @@ async function writeReply(bot, G, my, at){
     p.insertBefore(tok, caret);
     scroll();
 
+    const w = wires(tok, fan, step);
     fan.classList.add("in");
+    if(w) w.classList.add("in");
     await pause(80);
     if(my !== token) return;
     await pause(Math.min(680, Math.max(70, bitsOf(step.cands[0].p) * 155)));
@@ -267,6 +316,7 @@ async function writeReply(bot, G, my, at){
     if(my !== token) return;
     tok.classList.add("set");
     await pause(40);
+    if(w) w.classList.remove("in");
     fan.classList.remove("in", "out");
     fan.classList.add("rest");
     [...fan.children].forEach((c, i) => { if(i && i < 4) c.classList.add("keep"); });
