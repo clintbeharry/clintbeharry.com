@@ -25,6 +25,14 @@ const esc = s => String(s).replace(/[&<>]/g, c => ({ "&":"&amp;","<":"&lt;",">":
 let token = 0, last = null, LIVE = null, loading = null, okToLoad = false;
 const log = $("log"), thread = $("thread");
 const scroll = () => { thread.scrollTop = thread.scrollHeight; };
+/* Scrolling to the bottom is right while text is arriving, and wrong when a
+   400px stage has just appeared: that puts its top above the fold and the
+   whole sequence plays out of sight. This brings a turn's top into view. */
+function showTurn(t){
+  if(!t) return;
+  const r = t.getBoundingClientRect(), v = thread.getBoundingClientRect();
+  thread.scrollTop += (r.top - v.top) - 14;
+}
 
 /* ---- turns ---- */
 function turn(role){
@@ -162,6 +170,9 @@ async function ask(text){
   const st = $("stage");
   st.style.height = ""; st.style.opacity = "";
   claim(st, bt);
+  /* twice: once now, and once after layout has taken the stage's height */
+  showTurn(bt);
+  requestAnimationFrame(() => showTurn(bt));
   bt.classList.remove("working");
   who(bt, "");
   answering = bt;
@@ -175,6 +186,7 @@ async function ask(text){
      and retry there, not above an answer that has not been written yet */
   bt.classList.add("spoken");       /* the caption has nothing left to report */
   actions(bt);
+  inspector(bt.querySelector(".reply"));
   scroll();
 }
 
@@ -200,7 +212,13 @@ function collapse(stage){
   });
 }
 
-const FAN_N = 6;        /* candidates shown under each word */
+const FAN_N = 6;        /* candidates shown per word */
+/* The field opens to the RIGHT of the word, where a line of text has room,
+   and settles underneath only once the word has been taken. Opening
+   downwards meant the band had to be as deep as the field was tall, and the
+   collapse into finished prose was a long way to fall. */
+const OPEN_X = 18, OPEN_STEP_X = 13, OPEN_Y = 0, OPEN_ROW = 15;
+const REST_GAP = 7, REST_ROW = 12;   /* these two match --gap and --row */
 const MAX_CH = 13;      /* a long one is clipped so it cannot shove the line apart */
 const pause = ms => new Promise(r => setTimeout(r, ms));
 const share = p => p >= .995 ? (Math.floor(p * 1000) / 10).toFixed(1) + "%"
@@ -231,6 +249,9 @@ function buildTok(step){
     row.appendChild(document.createTextNode(clip(c.w)));
     const sh = el("s"); sh.textContent = share(c.p); row.appendChild(sh);
     row.style.setProperty("--o", (.16 + Math.sqrt(c.p) * .7).toFixed(3));
+    row.style.setProperty("--cx", "0%");       /* hang to the right */
+    row.style.setProperty("--x", (OPEN_X + i * OPEN_STEP_X) + "px");
+    row.style.setProperty("--y", (OPEN_Y + i * OPEN_ROW) + "px");
     if(i === 0) row.classList.add("win");
     fan.appendChild(row);
   });
@@ -299,9 +320,19 @@ async function writeReply(bot, G, my, at){
     await pause(Math.min(680, Math.max(70, bitsOf(step.cands[0].p) * 155)));
     if(my !== token) return;
 
-    const win = fan.children[0];
-    win.style.setProperty("--dy", "-" + win.offsetTop + "px");
-    win.classList.add("rise");
+    /* the one taken travels up and left onto the line; the rest slide left
+       and down into the trace they leave behind */
+    const rows = [...fan.children];
+    const win = rows[0];
+    win.style.setProperty("--cx", "-50%");
+    win.style.setProperty("--x", "0px");
+    win.style.setProperty("--y", (-(tok.offsetHeight - 2)) + "px");
+    rows.forEach((row, i) => {
+      if(i === 0) return;
+      row.style.setProperty("--cx", "-50%");
+      row.style.setProperty("--x", "0px");
+      row.style.setProperty("--y", (REST_GAP + i * REST_ROW) + "px");
+    });
     fan.classList.add("out");
 
     /* the share it was taken at, rising away: a few of them are in the air
@@ -319,12 +350,79 @@ async function writeReply(bot, G, my, at){
     if(w) w.classList.remove("in");
     fan.classList.remove("in", "out");
     fan.classList.add("rest");
-    [...fan.children].forEach((c, i) => { if(i && i < 4) c.classList.add("keep"); });
-    win.classList.remove("rise");
+    rows.forEach((c, i) => { if(i && i < 4) c.classList.add("keep"); });
+    win.style.setProperty("--x", "0px");
+    win.style.setProperty("--y", REST_GAP + "px");
   }
   caret.remove();
   p.classList.add("done");
   scroll();
+}
+
+/* ---------------------------------------------------------------------------
+   The finished answer, reopened.
+
+   Every word still carries the field it was chosen from. Once the sentence
+   has settled they are out of the way, but they are the whole point, so
+   moving a pointer or dragging a finger along the line swells the words back
+   open around wherever you are: full at the word itself, less either side,
+   gone two words out. The line opens its band once so the fields have
+   somewhere to be, and the bulge travels along inside it.
+--------------------------------------------------------------------------- */
+function inspector(p){
+  if(!p) return;
+  const toks = [...p.querySelectorAll(".tok")];
+  if(!toks.length) return;
+  let boxes = null;
+
+  /* measured in the settled layout and held for the gesture: the words move
+     as the bulge opens, and chasing their live positions makes the thing
+     under the pointer squirm away from it */
+  const measure = () => {
+    boxes = toks.map(t => {
+      const r = t.getBoundingClientRect();
+      return { x:(r.left + r.right) / 2, y:(r.top + r.bottom) / 2, h:r.height };
+    });
+  };
+  const apply = idx => {
+    toks.forEach((t, i) => {
+      const d = idx < 0 ? 99 : Math.abs(i - idx);
+      /* room opens almost fully for the neighbours, so their fields have
+         somewhere to go; how brightly those fields show falls away faster,
+         so the word under the pointer is plainly the one being read */
+      t.style.setProperty("--spread", d === 0 ? 1 : d === 1 ? .92 : d === 2 ? .7 : 0);
+      t.style.setProperty("--mag",    d === 0 ? 1 : d === 1 ? .45 : d === 2 ? .16 : 0);
+    });
+    p.classList.toggle("inspect", idx >= 0);
+  };
+  const nearest = (x, y) => {
+    if(!boxes) measure();
+    let best = -1, bd = Infinity;
+    boxes.forEach((b, i) => {
+      const dy = Math.abs(b.y - y);
+      if(dy > b.h * 1.3) return;                 /* another line */
+      const d = Math.abs(b.x - x) + dy * .5;
+      if(d < bd){ bd = d; best = i; }
+    });
+    return bd < 200 ? best : -1;
+  };
+  const move = (x, y) => apply(nearest(x, y));
+  const off = () => { apply(-1); boxes = null; };
+
+  p.addEventListener("pointerenter", measure);
+  p.addEventListener("pointermove", e => {
+    if(e.pointerType !== "touch") move(e.clientX, e.clientY);
+  });
+  p.addEventListener("pointerleave", off);
+  p.addEventListener("touchstart", e => {
+    measure(); const t = e.touches[0]; if(t) move(t.clientX, t.clientY);
+  }, { passive:true });
+  p.addEventListener("touchmove", e => {
+    const t = e.touches[0]; if(t) move(t.clientX, t.clientY);
+  }, { passive:true });
+  p.addEventListener("touchend", off);
+  p.addEventListener("touchcancel", off);
+  addEventListener("resize", () => { boxes = null; });
 }
 
 function actions(t){

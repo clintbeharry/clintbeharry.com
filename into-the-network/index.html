@@ -92,71 +92,81 @@ body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
 #park{position:fixed;left:-10000px;top:0;width:1000px;height:560px}
 
 /* ---- the reply, written into the thread ----
-   Each word reserves room under itself for the field it was chosen from, so
-   the line opens a band deep enough to hold one. The word keeps a tight line
-   box of its own, so the field hangs under the glyph and not under the whole
-   opened line. */
-.reply{--row:18px;--gap:12px;--band:calc(var(--gap) + 7.4*var(--row));
+   Each word reserves room under itself for the field it was chosen from. The
+   band is deliberately shallower than the field is tall when it opens: the
+   field opens out to the RIGHT of the word, where there is room, and only
+   settles underneath once the word has been taken. The drop from open field
+   to finished sentence is a small one that way. */
+.reply{--row:12px;          /* spacing once the field has settled */
+  --gap:7px;
+  --band:calc(var(--gap) + 7.2 * var(--row));
   line-height:var(--band);margin:calc((1.6em - var(--band))/2) 0 0;
   white-space:pre-wrap;word-break:break-word;color:var(--ink)}
-/* Once it has been read, the band closes to ordinary prose and the fields go
-   with it. They are absolutely positioned under their word, so a closed band
-   leaves them sitting on the line below: the finished answer has to be an
-   answer, not an answer with the rejected words written through it. */
+/* finished, the words give back the room they were holding */
+.reply.done .tok{--mag:0;--spread:0}
 .reply.done{--band:1.65em;
-  transition:line-height .6s cubic-bezier(.3,0,.2,1),margin-top .6s cubic-bezier(.3,0,.2,1)}
-/* Faded out is not gone: an invisible field is still part of the text, so
-   selecting the finished answer copied every rejected word along with it.
-   Hidden after the fade, it leaves the sentence by itself. */
-.reply.done .fan{opacity:0;visibility:hidden;
-  transition:opacity .4s ease,visibility 0s linear .4s}
-.reply.done .fan i{opacity:0;transition:opacity .4s ease}
-/* and the room each word was holding for its field is given back, so what is
-   left reads as a sentence rather than as a timing diagram */
-.reply.done .tok{padding-left:0;padding-right:0;
-  transition:padding .5s cubic-bezier(.3,0,.2,1)}
+  transition:line-height .55s cubic-bezier(.3,0,.2,1),margin-top .55s cubic-bezier(.3,0,.2,1)}
+/* exploring reopens the band, so the fields have somewhere to be again */
+.reply.done.inspect{--band:calc(var(--gap) + 7.2 * var(--row))}
+
 .tok{position:relative;display:inline-block;white-space:pre;vertical-align:baseline;
-  line-height:1.3;text-align:center;padding-left:var(--pad,0);padding-right:var(--pad,0)}
+  line-height:1.3;text-align:center;
+  /* Two falloffs, not one. --spread is the room a word takes, --mag is how
+     strongly its field shows. Tied together, a neighbour at half strength
+     showed a full-width field in half the room and sat on top of its
+     neighbour's. Room has to open faster than the field appears. */
+  padding-left:calc(var(--pad,0ch) * var(--spread,1));
+  padding-right:calc(var(--pad,0ch) * var(--spread,1));
+  transition:padding .26s cubic-bezier(.3,0,.2,1)}
 .tok .word{display:inline-block;line-height:1.3;opacity:0;
   transition:opacity .16s ease,color .3s ease}
-.tok.set .word{opacity:1}
-.tok.set .word{color:var(--ink)}
+.tok.set .word{opacity:1;color:var(--ink)}
 
-/* The lines back to the word. Each candidate was reached from the word above
-   it, and without them the field reads as a list that happens to be sitting
-   there rather than as a set of things one word led to. */
+/* The lines back to the word. Without them the field reads as a list that
+   happens to be sitting there rather than things one word led to. */
 .wires{position:absolute;left:0;top:0;overflow:visible;pointer-events:none;
   opacity:0;transition:opacity .26s ease}
 .wires.in{opacity:1}
 
-/* the field hangs below the word it belongs to */
-.fan{position:absolute;left:50%;transform:translateX(-50%);
-  top:calc(100% + var(--gap));display:flex;flex-direction:column;align-items:center;
-  white-space:pre;pointer-events:none}
-.fan i{font-style:normal;display:flex;gap:6px;align-items:baseline;
-  height:var(--row);line-height:var(--row);font-size:13px;color:var(--dim);
-  opacity:0;transition:opacity .24s ease,transform .32s cubic-bezier(.3,0,.2,1)}
-.fan i s{font-family:var(--mono);font-size:10px;color:var(--dimmer);
+/* The field. Anchored at the word's baseline; every row places itself, so it
+   can open to the right and settle underneath without relayout. */
+.fan{position:absolute;left:50%;top:100%;width:0;height:0;pointer-events:none}
+.fan i{position:absolute;left:0;top:0;font-style:normal;
+  display:flex;gap:5px;align-items:baseline;white-space:pre;
+  height:var(--row);line-height:var(--row);font-size:12.5px;color:var(--dim);
+  /* --cx is the anchor: open, a row hangs to the RIGHT of the word from its
+     centre; settled, it centres under it. Centre-anchored throughout, a row
+     wider than its word reached back over the word it came from. */
+  transform:translate(calc(var(--cx,-50%) + var(--x,0px)), var(--y,0px));
+  opacity:0;
+  transition:transform .42s cubic-bezier(.3,0,.2,1),opacity .26s ease}
+.fan i s{font-family:var(--mono);font-size:9.5px;color:var(--dimmer);
   text-decoration:none;font-variant-numeric:tabular-nums}
 .fan.in i{opacity:var(--o,.35)}
 .fan i.win{color:var(--clay);font-weight:500}
 .fan i.win s{color:var(--clay);opacity:.75}
-/* the one it took lifts out of the field and into the sentence */
-.fan i.rise{transform:translateY(var(--dy));opacity:1;
-  transition:transform .34s cubic-bezier(.4,0,.2,1),opacity .3s ease}
-.fan.out i:not(.rise){opacity:0}
+.fan.out i:not(.win){opacity:0}
 .fan.rest i{opacity:0}
-.fan.rest i.keep{opacity:calc(var(--o,.35) * .26);transition:opacity .7s ease}
+.fan.rest i.keep{opacity:calc(var(--o,.35) * .3);transition:opacity .7s ease}
+
+/* Faded out is not gone: an invisible field is still part of the text, so
+   selecting the finished answer copied every rejected word with it. */
+.reply.done .fan{opacity:0;visibility:hidden;
+  transition:opacity .4s ease,visibility 0s linear .4s}
+.reply.done.inspect .fan{opacity:var(--mag,0);visibility:visible;
+  transition:opacity .26s ease}
+.reply.done.inspect .fan i{opacity:var(--o,.35)}
+.reply.done.inspect .fan i.win{opacity:1}
 
 /* the share it was taken at, rising away above the line */
 .lift{position:absolute;left:50%;top:-2px;transform:translateX(-50%);
-  font-family:var(--mono);font-size:10.5px;color:var(--clay);pointer-events:none;
+  font-family:var(--mono);font-size:10px;color:var(--clay);pointer-events:none;
   opacity:0;white-space:pre}
-.lift.go{opacity:1;animation:liftaway 2.6s cubic-bezier(.25,.6,.3,1) forwards}
+.lift.go{opacity:1;animation:liftaway 2.4s cubic-bezier(.25,.6,.3,1) forwards}
 @keyframes liftaway{
   0%{opacity:0;transform:translate(-50%,4px)}
   14%{opacity:.95;transform:translate(-50%,-6px)}
-  100%{opacity:0;transform:translate(-50%,-40px)}
+  100%{opacity:0;transform:translate(-50%,-34px)}
 }
 .caret{display:inline-block;width:2px;height:1.05em;vertical-align:-.16em;
   background:var(--clay);border-radius:1px;animation:blink 1.15s steps(1,end) infinite}
@@ -595,7 +605,14 @@ async function play(data){
   lineMat.blending=THREE.AdditiveBlending; lineMat.needsUpdate=true;
   CAMR=620; CAMA=0; CAMB=0; CAMY=0; LOOK=V3(0,0,0); BOXR=[RX,RY,RZ];
   resize();
-  CARET=V3(0,LINE_Y,0);
+  /* Where the answer begins. The fold has to end on the spot the first word
+     will occupy, or the cursor appears in one place and the writing starts in
+     another. Derived from the seat the camera finishes the fold in, so it
+     stays put whatever the stage is sized to. */
+  {
+    const hH=640*Math.tan(cam.fov*Math.PI/360), hW=hH*(VW/VH);
+    CARET=V3(-hW+22, 22+hH-34, 0);
+  }
   const K=buildCloud();
 
   /* the question, as it was typed */
@@ -725,12 +742,12 @@ async function play(data){
     "projecting components 7-9",
     "projecting components 10-12",
   ];
-  const MOVE=1300, WIRE_T=2200, REST=700;
+  const MOVE=950, WIRE_T=1500, REST=340;
   /* How long one connection takes to flare and settle. It has to be short
      next to the spread of start times below, or the band of lit edges is as
      wide as the cloud and the wiring reads as the whole thing blinking on
      rather than as something travelling outward from the middle. */
-  const PULSE=330;
+  const PULSE=260;
   /* Fired in a random order the cloud read as noise rather than as something
      spreading, so each edge now takes its turn from how far out it sits. A
      fifth of the timing stays random: pure radius order wires in visible
@@ -739,7 +756,11 @@ async function play(data){
     const ly=EDGES.filter(e=>e.layer===k);
     const mx=Math.max(1,...ly.map(e=>e.rad));
     ly.forEach(e=>{ const f=cl(e.rad/mx);
-      e.t0=MOVE*.55+WIRE_T*(.05+.72*(.82*f+.18*Math.random())); });
+      e.t0=MOVE*.55+WIRE_T*(.05+.72*(.82*f+.18*Math.random()));
+      /* Not every connection flares. All of them lighting up read as noise,
+         and the ones worth seeing are the short ones: a word reaching its own
+         neighbours rather than across the whole cloud. */
+      e.lit=Math.random() < .30+.34*(1-f); });
   }
   /* The first pass wires the layout the words have just arrived in. Treating
      it as a morph meant the move was skipped but its DESTINATION was not, so
@@ -803,8 +824,9 @@ async function play(data){
         else{
           const kk=seg(tw,e.t0,e.t0+PULSE);
           const amp=kk>0&&kk<1?Math.sin(kk*Math.PI):0;
-          e.op=kk*.84; e.col.setHex(amp>.22?ACC:GREY); e.w=.32+amp*.52;
-          if(amp>.22){ e.a.clay=true; e.b.clay=true; }
+          const hot=e.lit&&amp>.22;
+          e.op=kk*.84; e.col.setHex(hot?ACC:GREY); e.w=.32+amp*(e.lit?.52:.16);
+          if(hot){ e.a.clay=true; e.b.clay=true; }
         }
       });
       const f=seg(tm,MOVE*.55,MOVE*1.08);
@@ -967,6 +989,14 @@ const esc = s => String(s).replace(/[&<>]/g, c => ({ "&":"&amp;","<":"&lt;",">":
 let token = 0, last = null, LIVE = null, loading = null, okToLoad = false;
 const log = $("log"), thread = $("thread");
 const scroll = () => { thread.scrollTop = thread.scrollHeight; };
+/* Scrolling to the bottom is right while text is arriving, and wrong when a
+   400px stage has just appeared: that puts its top above the fold and the
+   whole sequence plays out of sight. This brings a turn's top into view. */
+function showTurn(t){
+  if(!t) return;
+  const r = t.getBoundingClientRect(), v = thread.getBoundingClientRect();
+  thread.scrollTop += (r.top - v.top) - 14;
+}
 
 /* ---- turns ---- */
 function turn(role){
@@ -1104,6 +1134,9 @@ async function ask(text){
   const st = $("stage");
   st.style.height = ""; st.style.opacity = "";
   claim(st, bt);
+  /* twice: once now, and once after layout has taken the stage's height */
+  showTurn(bt);
+  requestAnimationFrame(() => showTurn(bt));
   bt.classList.remove("working");
   who(bt, "");
   answering = bt;
@@ -1117,6 +1150,7 @@ async function ask(text){
      and retry there, not above an answer that has not been written yet */
   bt.classList.add("spoken");       /* the caption has nothing left to report */
   actions(bt);
+  inspector(bt.querySelector(".reply"));
   scroll();
 }
 
@@ -1142,7 +1176,13 @@ function collapse(stage){
   });
 }
 
-const FAN_N = 6;        /* candidates shown under each word */
+const FAN_N = 6;        /* candidates shown per word */
+/* The field opens to the RIGHT of the word, where a line of text has room,
+   and settles underneath only once the word has been taken. Opening
+   downwards meant the band had to be as deep as the field was tall, and the
+   collapse into finished prose was a long way to fall. */
+const OPEN_X = 18, OPEN_STEP_X = 13, OPEN_Y = 0, OPEN_ROW = 15;
+const REST_GAP = 7, REST_ROW = 12;   /* these two match --gap and --row */
 const MAX_CH = 13;      /* a long one is clipped so it cannot shove the line apart */
 const pause = ms => new Promise(r => setTimeout(r, ms));
 const share = p => p >= .995 ? (Math.floor(p * 1000) / 10).toFixed(1) + "%"
@@ -1173,6 +1213,9 @@ function buildTok(step){
     row.appendChild(document.createTextNode(clip(c.w)));
     const sh = el("s"); sh.textContent = share(c.p); row.appendChild(sh);
     row.style.setProperty("--o", (.16 + Math.sqrt(c.p) * .7).toFixed(3));
+    row.style.setProperty("--cx", "0%");       /* hang to the right */
+    row.style.setProperty("--x", (OPEN_X + i * OPEN_STEP_X) + "px");
+    row.style.setProperty("--y", (OPEN_Y + i * OPEN_ROW) + "px");
     if(i === 0) row.classList.add("win");
     fan.appendChild(row);
   });
@@ -1241,9 +1284,19 @@ async function writeReply(bot, G, my, at){
     await pause(Math.min(680, Math.max(70, bitsOf(step.cands[0].p) * 155)));
     if(my !== token) return;
 
-    const win = fan.children[0];
-    win.style.setProperty("--dy", "-" + win.offsetTop + "px");
-    win.classList.add("rise");
+    /* the one taken travels up and left onto the line; the rest slide left
+       and down into the trace they leave behind */
+    const rows = [...fan.children];
+    const win = rows[0];
+    win.style.setProperty("--cx", "-50%");
+    win.style.setProperty("--x", "0px");
+    win.style.setProperty("--y", (-(tok.offsetHeight - 2)) + "px");
+    rows.forEach((row, i) => {
+      if(i === 0) return;
+      row.style.setProperty("--cx", "-50%");
+      row.style.setProperty("--x", "0px");
+      row.style.setProperty("--y", (REST_GAP + i * REST_ROW) + "px");
+    });
     fan.classList.add("out");
 
     /* the share it was taken at, rising away: a few of them are in the air
@@ -1261,12 +1314,79 @@ async function writeReply(bot, G, my, at){
     if(w) w.classList.remove("in");
     fan.classList.remove("in", "out");
     fan.classList.add("rest");
-    [...fan.children].forEach((c, i) => { if(i && i < 4) c.classList.add("keep"); });
-    win.classList.remove("rise");
+    rows.forEach((c, i) => { if(i && i < 4) c.classList.add("keep"); });
+    win.style.setProperty("--x", "0px");
+    win.style.setProperty("--y", REST_GAP + "px");
   }
   caret.remove();
   p.classList.add("done");
   scroll();
+}
+
+/* ---------------------------------------------------------------------------
+   The finished answer, reopened.
+
+   Every word still carries the field it was chosen from. Once the sentence
+   has settled they are out of the way, but they are the whole point, so
+   moving a pointer or dragging a finger along the line swells the words back
+   open around wherever you are: full at the word itself, less either side,
+   gone two words out. The line opens its band once so the fields have
+   somewhere to be, and the bulge travels along inside it.
+--------------------------------------------------------------------------- */
+function inspector(p){
+  if(!p) return;
+  const toks = [...p.querySelectorAll(".tok")];
+  if(!toks.length) return;
+  let boxes = null;
+
+  /* measured in the settled layout and held for the gesture: the words move
+     as the bulge opens, and chasing their live positions makes the thing
+     under the pointer squirm away from it */
+  const measure = () => {
+    boxes = toks.map(t => {
+      const r = t.getBoundingClientRect();
+      return { x:(r.left + r.right) / 2, y:(r.top + r.bottom) / 2, h:r.height };
+    });
+  };
+  const apply = idx => {
+    toks.forEach((t, i) => {
+      const d = idx < 0 ? 99 : Math.abs(i - idx);
+      /* room opens almost fully for the neighbours, so their fields have
+         somewhere to go; how brightly those fields show falls away faster,
+         so the word under the pointer is plainly the one being read */
+      t.style.setProperty("--spread", d === 0 ? 1 : d === 1 ? .92 : d === 2 ? .7 : 0);
+      t.style.setProperty("--mag",    d === 0 ? 1 : d === 1 ? .45 : d === 2 ? .16 : 0);
+    });
+    p.classList.toggle("inspect", idx >= 0);
+  };
+  const nearest = (x, y) => {
+    if(!boxes) measure();
+    let best = -1, bd = Infinity;
+    boxes.forEach((b, i) => {
+      const dy = Math.abs(b.y - y);
+      if(dy > b.h * 1.3) return;                 /* another line */
+      const d = Math.abs(b.x - x) + dy * .5;
+      if(d < bd){ bd = d; best = i; }
+    });
+    return bd < 200 ? best : -1;
+  };
+  const move = (x, y) => apply(nearest(x, y));
+  const off = () => { apply(-1); boxes = null; };
+
+  p.addEventListener("pointerenter", measure);
+  p.addEventListener("pointermove", e => {
+    if(e.pointerType !== "touch") move(e.clientX, e.clientY);
+  });
+  p.addEventListener("pointerleave", off);
+  p.addEventListener("touchstart", e => {
+    measure(); const t = e.touches[0]; if(t) move(t.clientX, t.clientY);
+  }, { passive:true });
+  p.addEventListener("touchmove", e => {
+    const t = e.touches[0]; if(t) move(t.clientX, t.clientY);
+  }, { passive:true });
+  p.addEventListener("touchend", off);
+  p.addEventListener("touchcancel", off);
+  addEventListener("resize", () => { boxes = null; });
 }
 
 function actions(t){

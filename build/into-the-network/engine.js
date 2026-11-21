@@ -344,7 +344,14 @@ async function play(data){
   lineMat.blending=THREE.AdditiveBlending; lineMat.needsUpdate=true;
   CAMR=620; CAMA=0; CAMB=0; CAMY=0; LOOK=V3(0,0,0); BOXR=[RX,RY,RZ];
   resize();
-  CARET=V3(0,LINE_Y,0);
+  /* Where the answer begins. The fold has to end on the spot the first word
+     will occupy, or the cursor appears in one place and the writing starts in
+     another. Derived from the seat the camera finishes the fold in, so it
+     stays put whatever the stage is sized to. */
+  {
+    const hH=640*Math.tan(cam.fov*Math.PI/360), hW=hH*(VW/VH);
+    CARET=V3(-hW+22, 22+hH-34, 0);
+  }
   const K=buildCloud();
 
   /* the question, as it was typed */
@@ -474,12 +481,12 @@ async function play(data){
     "projecting components 7-9",
     "projecting components 10-12",
   ];
-  const MOVE=1300, WIRE_T=2200, REST=700;
+  const MOVE=950, WIRE_T=1500, REST=340;
   /* How long one connection takes to flare and settle. It has to be short
      next to the spread of start times below, or the band of lit edges is as
      wide as the cloud and the wiring reads as the whole thing blinking on
      rather than as something travelling outward from the middle. */
-  const PULSE=330;
+  const PULSE=260;
   /* Fired in a random order the cloud read as noise rather than as something
      spreading, so each edge now takes its turn from how far out it sits. A
      fifth of the timing stays random: pure radius order wires in visible
@@ -488,7 +495,11 @@ async function play(data){
     const ly=EDGES.filter(e=>e.layer===k);
     const mx=Math.max(1,...ly.map(e=>e.rad));
     ly.forEach(e=>{ const f=cl(e.rad/mx);
-      e.t0=MOVE*.55+WIRE_T*(.05+.72*(.82*f+.18*Math.random())); });
+      e.t0=MOVE*.55+WIRE_T*(.05+.72*(.82*f+.18*Math.random()));
+      /* Not every connection flares. All of them lighting up read as noise,
+         and the ones worth seeing are the short ones: a word reaching its own
+         neighbours rather than across the whole cloud. */
+      e.lit=Math.random() < .30+.34*(1-f); });
   }
   /* The first pass wires the layout the words have just arrived in. Treating
      it as a morph meant the move was skipped but its DESTINATION was not, so
@@ -552,8 +563,9 @@ async function play(data){
         else{
           const kk=seg(tw,e.t0,e.t0+PULSE);
           const amp=kk>0&&kk<1?Math.sin(kk*Math.PI):0;
-          e.op=kk*.84; e.col.setHex(amp>.22?ACC:GREY); e.w=.32+amp*.52;
-          if(amp>.22){ e.a.clay=true; e.b.clay=true; }
+          const hot=e.lit&&amp>.22;
+          e.op=kk*.84; e.col.setHex(hot?ACC:GREY); e.w=.32+amp*(e.lit?.52:.16);
+          if(hot){ e.a.clay=true; e.b.clay=true; }
         }
       });
       const f=seg(tm,MOVE*.55,MOVE*1.08);
