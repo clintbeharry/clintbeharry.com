@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Clint Beharry
 /* ---------------------------------------------------------------------------
    Live provider. Runs the model in the visitor's own browser, so any question
    can be asked. Nothing is sent anywhere.

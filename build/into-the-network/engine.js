@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Clint Beharry
 /* ---------------------------------------------------------------------------
    The five-step sequence, as a function of one question.
 

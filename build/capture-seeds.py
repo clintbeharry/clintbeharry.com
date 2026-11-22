@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 Clint Beharry
 """
 Record questions for into-the-network/, using a local copy of the model.
 
