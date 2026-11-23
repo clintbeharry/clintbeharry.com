@@ -99,9 +99,13 @@ body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
    field opens out to the RIGHT of the word, where there is room, and only
    settles underneath once the word has been taken. The drop from open field
    to finished sentence is a small one that way. */
-.reply{--row:12px;          /* spacing once the field has settled */
-  --gap:7px;
-  --band:calc(var(--gap) + 7.2 * var(--row));
+.reply{--row:11px;          /* spacing once the field has settled */
+  --gap:4px;              /* and how far under the word it settles */
+  /* The band has to clear the field while it is OPEN, which hangs further
+     down than the settled rows do. Tying it to the settled spacing meant the
+     two could not be tuned apart: pulling the alternatives up under their
+     word also pulled the next line up into the open field. */
+  --band:88px;
   line-height:var(--band);margin:calc((1.6em - var(--band))/2) 0 0;
   white-space:pre-wrap;word-break:break-word;color:var(--ink)}
 /* finished, the words give back the room they were holding */
@@ -109,7 +113,7 @@ body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
 .reply.done{--band:1.65em;
   transition:line-height .55s cubic-bezier(.3,0,.2,1),margin-top .55s cubic-bezier(.3,0,.2,1)}
 /* exploring reopens the band, so the fields have somewhere to be again */
-.reply.done.inspect{--band:calc(var(--gap) + 7.2 * var(--row))}
+.reply.done.inspect{--band:88px}
 
 .tok{position:relative;display:inline-block;white-space:pre;vertical-align:baseline;
   line-height:1.3;text-align:center;
@@ -149,7 +153,9 @@ body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
 .fan i.win s{color:var(--clay);opacity:.75}
 .fan.out i:not(.win){opacity:0}
 .fan.rest i{opacity:0}
-.fan.rest i.keep{opacity:calc(var(--o,.35) * .3);transition:opacity .7s ease}
+/* What a word nearly was is the point of the piece, so the traces it leaves
+   are worth reading rather than merely sensing. */
+.fan.rest i.keep{opacity:calc(var(--o,.35) * .72);transition:opacity .7s ease}
 
 /* Faded out is not gone: an invisible field is still part of the text, so
    selecting the finished answer copied every rejected word with it. */

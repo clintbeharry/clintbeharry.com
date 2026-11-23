@@ -219,8 +219,8 @@ const FAN_N = 6;        /* candidates shown per word */
    and settles underneath only once the word has been taken. Opening
    downwards meant the band had to be as deep as the field was tall, and the
    collapse into finished prose was a long way to fall. */
-const OPEN_X = 18, OPEN_STEP_X = 13, OPEN_Y = 0, OPEN_ROW = 15;
-const REST_GAP = 7, REST_ROW = 12;   /* these two match --gap and --row */
+const OPEN_X = 18, OPEN_STEP_X = 13, OPEN_Y = 0, OPEN_ROW = 13;
+const REST_GAP = 4, REST_ROW = 11;   /* these two match --gap and --row */
 const MAX_CH = 13;      /* a long one is clipped so it cannot shove the line apart */
 const pause = ms => new Promise(r => setTimeout(r, ms));
 const share = p => p >= .995 ? (Math.floor(p * 1000) / 10).toFixed(1) + "%"
@@ -250,7 +250,10 @@ function buildTok(step){
     const row = el("i");
     row.appendChild(document.createTextNode(clip(c.w)));
     const sh = el("s"); sh.textContent = share(c.p); row.appendChild(sh);
-    row.style.setProperty("--o", (.16 + Math.sqrt(c.p) * .7).toFixed(3));
+    /* opacity still carries probability, but off a higher floor: the long
+       shots were landing near invisible, and a candidate worth nothing is
+       still worth seeing */
+    row.style.setProperty("--o", (.24 + Math.sqrt(c.p) * .66).toFixed(3));
     row.style.setProperty("--cx", "0%");       /* hang to the right */
     row.style.setProperty("--x", (OPEN_X + i * OPEN_STEP_X) + "px");
     row.style.setProperty("--y", (OPEN_Y + i * OPEN_ROW) + "px");
