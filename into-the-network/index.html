@@ -227,7 +227,10 @@ footer{flex:0 0 auto;padding:6px 20px 20px;background:var(--page)}
 .chip:hover{color:var(--ink);background:#ffffff0f}
 .composer{background:var(--raised);border-radius:16px;padding:8px;
   border:1px solid var(--rule-2)}
-.line{display:flex;align-items:flex-end;gap:8px;padding-left:8px}
+/* The box holds one line, so the button belongs on that line's middle.
+   flex-end hung it off the input's baseline, and the input is taller than the
+   button by its own padding, which showed up as a gap above the arrow. */
+.line{display:flex;align-items:center;gap:8px;padding-left:8px}
 #msg{flex:1;min-width:0;background:none;border:0;color:var(--ink);font:inherit;
   font-size:15px;line-height:21px;padding:7px 0}
 #msg:focus{outline:none}
