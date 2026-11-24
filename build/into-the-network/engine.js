@@ -681,16 +681,19 @@ async function play(data){
   const warm0=R4.map(n=>n.warm===undefined?(n.clay?1:0):n.warm);
   const CC=new THREE.Color(CLAY);
   let said=0;
-  await clock(3400,(_,t)=>{
-    const close=io(seg(t,1700,2750));
-    const packed=io(seg(t,800,2200));
-    const gone=seg(t,3000,3220), bye=seg(t,120,620);
+  /* Once the stack is a cursor there is nothing left to watch, so the hold
+     between the squeeze finishing and the cloud clearing is dead time. The
+     fade now starts almost on the beat the squeeze lands. */
+  await clock(2820,(_,t)=>{
+    const close=io(seg(t,1600,2460));
+    const packed=io(seg(t,760,2050));
+    const gone=seg(t,2500,2700), bye=seg(t,120,620);
     /* The fold starts from wherever the camera happens to be, orbiting and
        off centre, and the camera finds its way head-on while the fold runs.
        Nothing waits for the shot. The cloud scales with the dolly so its
        apparent size holds until the fold itself takes it. */
-    const warm=io(seg(t,850,2400));
-    const ck=io(seg(t,0,1900)), sc=lerp(1,ENDR/CAM3,ck);
+    const warm=io(seg(t,800,2180));
+    const ck=io(seg(t,0,1760)), sc=lerp(1,ENDR/CAM3,ck);
     CAMR=lerp(cam0[0],ENDR,ck); CAMA=lerp(cam0[1],0,ck); CAMB=lerp(cam0[2],0,ck);
     LOOK=V3(0,lerp(cam0[3],22,ck),0);
     BOXR=[RX*sc,RY*sc,RZ*sc];
@@ -700,7 +703,7 @@ async function play(data){
          squeezing flat and then, as a second move, rising. A word now travels
          diagonally: it goes in and up at once, and only the final squeeze into
          the caret's own 21px band is left as a beat of its own. */
-      const k=io(cl((t-650-n.rank*620)/950)), g=k;
+      const k=io(cl((t-600-n.rank*570)/880)), g=k;
       const hx=n.home.x*sc, hy=n.home.y*sc, hz=n.home.z*sc;
       /* The staging band used to be 170px deep, which left three quarters of
          the climb to the final squeeze and so split the fold in two: in, then
@@ -721,14 +724,15 @@ async function play(data){
     /* The moment the cursor exists, the page stops saying it is thinking:
        the thinking mark hands over to the cursor, because from here it is
        answering rather than working out what to answer. */
-    if(t>2450 && !said){ said=1; if(window.onCursor) window.onCursor(); }
-    LATE=()=>{ if(t>2450) caret(CARET,seg(t,2450,2720),t); };
+    if(t>2180 && !said){ said=1; if(window.onCursor) window.onCursor(); }
+    LATE=()=>{ if(t>2180) caret(CARET,seg(t,2180,2420),t); };
   });
   if(me!==run) return;
   NODES.length=0; EDGES.length=0; HITS.length=0;
   lineMat.blending=THREE.AdditiveBlending; lineMat.needsUpdate=true;
-  /* two blinks before it answers */
-  await clock(1320,(_,el)=>{ LATE=()=>caret(CARET,1,el); });
+  /* One blink, not two. A cursor blinking on an empty line is a wait, and
+     the wait was longer than anything it was waiting for. */
+  await clock(700,(_,el)=>{ LATE=()=>caret(CARET,1,el); });
   if(me!==run) return;
 
   /* ---------- and out ----------
