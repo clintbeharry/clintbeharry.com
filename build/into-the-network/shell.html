@@ -24,11 +24,18 @@
   color-scheme:dark;
 }
 *{box-sizing:border-box}
-html,body{height:100%;margin:0;background:var(--page)}
+/* 100% of what, on a phone, changes as the browser chrome slides away, which
+   is how the page ended up taller than the window and scrolling as a whole.
+   dvh is the window as it actually is at that moment. */
+html,body{height:100%;margin:0;background:var(--page);overflow:hidden}
+body{height:100dvh}
 body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
   -webkit-font-smoothing:antialiased;display:flex;flex-direction:column;overflow:hidden}
 
-#thread{flex:1 1 auto;overflow-y:auto;padding:32px 20px 8px}
+/* A field opening to the right of the last word on a line reaches past the
+   column, and absolutely positioned things still count toward the page width.
+   Clipped here, so a fan near the edge is cut rather than scrolling the site. */
+#thread{flex:1 1 auto;overflow-y:auto;overflow-x:hidden;padding:32px 20px 8px}
 #thread::-webkit-scrollbar{width:10px}
 #thread::-webkit-scrollbar-thumb{background:#ffffff1f;border-radius:5px}
 .inner{max-width:var(--col);margin:0 auto}
@@ -207,7 +214,13 @@ body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
 
 footer{flex:0 0 auto;padding:6px 20px 20px;background:var(--page)}
 .bar{max-width:var(--col);margin:0 auto}
-.chips{display:flex;gap:7px;flex-wrap:wrap;margin:0 0 11px;padding:0;list-style:none}
+/* Out of the way until asked for. They are a prompt, not furniture, and on a
+   phone they were taking up most of the screen before anything had happened. */
+.chips{display:flex;gap:7px;flex-wrap:wrap;margin:0;padding:0;list-style:none;
+  max-height:0;opacity:0;overflow:hidden;
+  transition:max-height .32s cubic-bezier(.3,0,.2,1),opacity .24s ease,
+             margin .32s cubic-bezier(.3,0,.2,1)}
+.bar.open .chips{max-height:40vh;opacity:1;margin:0 0 11px}
 .chip{font:inherit;font-size:12.5px;color:var(--dim);background:transparent;
   border:1px solid var(--rule-2);border-radius:999px;padding:6px 13px;cursor:pointer;
   transition:background .15s ease,color .15s ease}

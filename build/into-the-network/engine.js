@@ -248,6 +248,7 @@ let GAP=118;
    same sequence fills whichever it is given. */
 let RX=400, RY=150, RZ=190;
 let CAM2=620, CAM3=900, ENDR=640;
+const ORBIT=.16;            /* how far the box turns while it is read */
 let COLS=1;                 /* question words per row in steps one and two */
 let ROWG=168;               /* and how far apart those rows sit */
 /* where the i-th question word sits while its neighbourhood is around it */
@@ -257,19 +258,29 @@ function seat(i){
   return { x:(c-(wide-1)/2)*GAP, y:-(r-(rows-1)/2)*ROWG };
 }
 const TANH=()=>Math.tan(cam.fov*Math.PI/360);
-/* the distance at which a box of these half-extents fills the frame */
-function fitCam(mx,my,pad){
+/* The distance at which something of these half-extents fits the frame.
+   mz is its half-depth, and leaving it out is what cropped the box: the near
+   face sits mz CLOSER than the centre, so its corners project as though the
+   thing were d/(d-mz) times wider. Standing the camera off by the depth as
+   well as the width is the whole correction. */
+function fitCam(mx,my,pad,mz){
   const t=TANH(), A=VW/VH;
-  return Math.max(my*pad/t, mx*pad/(t*A));
+  return (mz||0) + Math.max(my*pad/t, mx*pad/(t*A));
+}
+/* and for the box, which also turns while it is being looked at: at orbit
+   angle a it presents a wider face and a deeper one than its own half-extents */
+function fitBox(rx,ry,rz,orbit,bob,pad){
+  const c=Math.abs(Math.cos(orbit)), si=Math.abs(Math.sin(orbit));
+  return fitCam(rx*c+rz*si, ry+bob, pad, rx*si+rz*c);
 }
 function fitStage(){
   const A=VW/VH;
   const wide=cl((A-.70)/(1.85-.70));      /* 0 on a tall phone, 1 on a desktop */
-  RX=lerp(205,400,wide); RY=lerp(315,180,wide); RZ=lerp(170,190,wide);
-  /* a tight margin on purpose: the slack was making everything smaller than
-     the stage could have carried */
-  CAM3=fitCam(RX,RY,1.10);
-  ENDR=fitCam(RX*.58,RY*.58,1.12);
+  RX=lerp(205,400,wide); RY=lerp(315,180,wide); RZ=lerp(128,146,wide);
+  /* shallower than it was, because depth costs camera distance twice over:
+     once to clear the near face and again to hold the turn */
+  CAM3=fitBox(RX,RY,RZ,ORBIT,32,1.05);
+  ENDR=fitCam(RX*.58,RY*.58,1.12,RZ*.58);
 }
 const LINE_Y=104, SCALE=1.05, PER=1600;
 const pct=p=> p>=.995 ? (Math.floor(p*1000)/10).toFixed(1)+"%"
@@ -402,7 +413,8 @@ async function play(data){
   /* the width decides how far back the camera stands, and the rows then open
      out to use whatever height that leaves, rather than huddling in a band
      across the middle of a tall stage */
-  CAM2 = fitCam((COLS-1)/2*GAP + 95, 0, 1.08);
+  /* the neighbourhoods carry ±100 of depth, which counts the same way */
+  CAM2 = fitCam((COLS-1)/2*GAP + 95, 0, 1.08, 105);
   ROWG = rows > 1 ? cl((TANH()*CAM2 - 118)*2/(rows-1), 150, 300) : 168;
   CAMR=CAM2; CAMA=0; CAMB=0; CAMY=0; LOOK=V3(0,0,0); BOXR=[RX,RY,RZ];
   resize();
@@ -519,7 +531,7 @@ async function play(data){
   const op0=nodes.map(n=>n.op);
   await clock(1700,(_,el)=>{
     const k=io(seg(el,0,1500));
-    CAMR=lerp(CAM2,CAM3,k); CAMA=lerp(0,.24,k); CAMB=lerp(0,30,k);
+    CAMR=lerp(CAM2,CAM3,k); CAMA=lerp(0,ORBIT,k); CAMB=lerp(0,30,k);
     nodes.forEach((n,j)=>{
       const r=recs[j];
       n.h.lerpVectors(from[j],lay[j][0],k);

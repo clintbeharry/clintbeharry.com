@@ -224,8 +224,41 @@ const FAN_N = 6;        /* candidates shown per word */
    list wearing a fan's clothes. They now sit on an arc that opens above and
    below the word, at reaches that differ per candidate, so the lines leave at
    real angles and real lengths. */
-const FAN_A0 = 38, FAN_A1 = -52;     /* degrees: first candidate, last */
-const FAN_R0 = 46, FAN_R1 = 116;     /* and how far out each reaches */
+/* Direction and distance are two channels, and both were carrying rank, so
+   the fan came out a ladder: shortest at the top, longest at the bottom,
+   every word the same shape. They now carry different things.
+
+   DISTANCE still carries probability, as surprisal, so a word the model was
+   almost certain of sits right against the line and a long shot is flung out.
+   Rank is mixed in at 45% only to keep neighbours from landing on top of each
+   other when five candidates share nearly the same tiny probability.
+
+   DIRECTION carries what KIND of word it is, which is real and has nothing to
+   do with how likely it was. Punctuation leaves upward, word-pieces next,
+   then ordinary words, then capitals downward. So the alternatives sort
+   themselves by what they would have DONE to the sentence, and the same kind
+   of word always leaves the same way, across the whole reply.
+
+   SPREAD carries certainty: the arc is narrow where the model knew what came
+   next and swings wide open where it did not. That is the reading available at
+   a glance, before any single word is looked at. */
+const FAN_SPAN0 = 76, FAN_SPAN1 = 116;  /* degrees of arc: certain, uncertain */
+const FAN_MINY = 15;                    /* px, two rows may never sit closer */
+const FAN_TILT  = -6;                   /* the arc's centre line, just below level */
+const FAN_R0 = 44, FAN_R1 = 122;        /* and how far out each reaches */
+/* cl() is the engine's clamp, declared above in the built page */
+/* 0 up through 3 down. A candidate that is punctuation would have closed the
+   clause; one or two characters is the model starting to spell a different
+   word; a capital would have begun something new. */
+const stem = (a, b) => {
+  let n = 0;
+  while(n < a.length && n < b.length && a[n].toLowerCase() === b[n].toLowerCase()) n++;
+  return n;
+};
+const kindOf = w => /^[^0-9A-Za-z]/.test(w) ? 0
+                  : w.length <= 2          ? 1
+                  : /^[A-Z]/.test(w)       ? 3
+                  :                          2;
 /* a stable wobble per word, so the arc is never mechanically even and the
    same word always sits the same way */
 const wobble = w => {
@@ -258,6 +291,51 @@ function buildTok(step){
   tok.style.setProperty("--pad",
     (0.45 + (widest - step.tok.length) / 2).toFixed(2) + "ch");
 
+  /* how wide the whole arc opens: how surprised the model was by its own
+     first choice, which is the plainest certainty figure the piece has */
+  const span = FAN_SPAN0 + (FAN_SPAN1 - FAN_SPAN0)
+                         * cl(bitsOf(field[0].p) / 3.2);
+
+  /* Where each one leaves. Kind pulls it toward its own quarter of the arc,
+     and an even share of the arc keeps it off its neighbours: kind alone put
+     four capitals on the same ray, stacked at nearly equal reach, which is a
+     collision rather than a grouping. Order is by kind, so the quarters still
+     read top to bottom even when the even share dominates. */
+  const rank = i => {
+    const w = field[i].w;
+    /* a candidate sharing a stem with the word taken is a near miss, a
+       different ending on the same thought, so it sits next to it; a word
+       that shares nothing is a real fork and swings away. After that, by how
+       long the word is, which is the one thing left that is a property of the
+       candidate rather than of its odds. */
+    return kindOf(w) * 100 + (stem(w, step.tok) >= 3 ? 0 : 40)
+         + Math.min(w.length, 14) * 2;
+  };
+  const order = field.map((c, i) => i).sort((a, b) => rank(a) - rank(b) || a - b);
+  const place = field.map((c, i) => {
+    const slot  = field.length > 1 ? order.indexOf(i) / (field.length - 1) : .5;
+    const u     = .68 * slot + .32 * (kindOf(c.w) + .5) / 4;
+    const f     = field.length > 1 ? i / (field.length - 1) : 0;
+    return {
+      a: FAN_TILT + span * (.5 - u) + wobble(c.w) * span * .11,
+      R: FAN_R0 + (FAN_R1 - FAN_R0)
+                * (.55 * cl(bitsOf(c.p) / 8) + .45 * f) + wobble(c.w) * 16
+    };
+  });
+  /* and a last pass so nothing overlaps: reaches differ, but two rows on
+     nearly the same ray still land on top of each other. Push the pair apart
+     in the only direction that matters for reading, and keep the reach. */
+  const ys = place.map((q, i) => ({ i, y: -Math.sin(q.a * Math.PI / 180) * q.R }))
+                  .sort((m, n) => m.y - n.y);
+  for(let i = 1; i < ys.length; i++){
+    const d = ys[i].y - ys[i - 1].y;
+    if(d < FAN_MINY){ ys[i].y += FAN_MINY - d; }
+  }
+  ys.forEach(({ i, y }) => {
+    const q = place[i];
+    q.a = -Math.asin(cl(y / q.R, -.94, .94)) * 180 / Math.PI;
+  });
+
   const fan = el("span", "fan");
   field.forEach((c, i) => {
     const row = el("i");
@@ -267,9 +345,7 @@ function buildTok(step){
        shots were landing near invisible, and a candidate worth nothing is
        still worth seeing */
     row.style.setProperty("--o", (.24 + Math.sqrt(c.p) * .66).toFixed(3));
-    const f = FAN_N > 1 ? i / (FAN_N - 1) : 0;
-    const a = (FAN_A0 + (FAN_A1 - FAN_A0) * f) * Math.PI / 180;
-    const R = FAN_R0 + (FAN_R1 - FAN_R0) * f + wobble(c.w) * 26;
+    const a = place[i].a * Math.PI / 180, R = place[i].R;
     row.style.setProperty("--cx", "0%");       /* reach out to the right */
     row.style.setProperty("--x", (Math.cos(a) * R).toFixed(1) + "px");
     row.style.setProperty("--y", (-Math.sin(a) * R).toFixed(1) + "px");
@@ -472,7 +548,7 @@ function chips(){
     const li = document.createElement("li");
     const b = document.createElement("button");
     b.className = "chip"; b.textContent = text;
-    b.onclick = () => ask(text);
+    b.onclick = () => { openChips(false); chipHold = false; $("msg").blur(); ask(text); };
     li.appendChild(b); $("chips").appendChild(li);
   });
 }
@@ -480,8 +556,22 @@ function submit(){
   const v = $("msg").value.trim();
   if(!v) return;
   $("msg").value = ""; $("send").disabled = true;
+  openChips(false); $("msg").blur();
   ask(v);
 }
+/* The suggestions are shown when somebody reaches for the box, not before.
+   A chip press has to survive the blur that the press itself causes, so a
+   pointer going down on the list holds them open until the click lands. */
+const bar = document.querySelector(".bar");
+const openChips = v => bar.classList.toggle("open", v);
+let chipHold = false;
+$("chips").addEventListener("pointerdown", () => { chipHold = true; });
+$("msg").addEventListener("focus", () => openChips(true));
+$("msg").addEventListener("blur", () => setTimeout(() => {
+  if(!chipHold) openChips(false);
+  chipHold = false;
+}, 60));
+
 $("msg").addEventListener("keydown", e => { if(e.key === "Enter") submit(); });
 $("msg").addEventListener("input", () => { $("send").disabled = !$("msg").value.trim(); });
 $("send").onclick = submit;
