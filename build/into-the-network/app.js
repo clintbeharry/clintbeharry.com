@@ -473,55 +473,124 @@ function inspector(p){
   if(!p) return;
   const toks = [...p.querySelectorAll(".tok")];
   if(!toks.length) return;
-  let boxes = null;
+  p.classList.add("ready");
 
-  /* measured in the settled layout and held for the gesture: the words move
-     as the bulge opens, and chasing their live positions makes the thing
-     under the pointer squirm away from it */
+  /* Offsets inside the paragraph, not viewport coordinates, so scrolling
+     never invalidates them. Nothing in the finished text moves any more, so
+     one measurement holds for the life of the paragraph. */
+  let boxes = null;
   const measure = () => {
+    const pr = p.getBoundingClientRect();
     boxes = toks.map(t => {
       const r = t.getBoundingClientRect();
-      return { x:(r.left + r.right) / 2, y:(r.top + r.bottom) / 2, h:r.height };
+      return { x:(r.left + r.right) / 2 - pr.left,
+               y:(r.top + r.bottom) / 2 - pr.top,
+               w:r.width, h:r.height };
     });
   };
+
+  /* the bulge: full size under the pointer, falling away over two words
+     either side, so the eye is led along the sentence rather than snapped to
+     one word */
+  const LENS = [1, .5, .22];
+  const GROW = .13;
+  /* and the way the displacement is handed back. Each word is pushed out by
+     half its own growth plus all the growth between it and the focus, which
+     is what keeps the gaps even; that total would otherwise shift the whole
+     rest of the line sideways, and a word that has drifted is a word you
+     aim at and miss. So it is walked back to nothing over the next three,
+     compressing three gaps by a pixel or two each, which nobody sees. */
+  const TAIL = [.6, .28, .1];
+
+  let at = -1, pinned = -1;
   const apply = idx => {
+    if(idx === at) return;
+    at = idx;
+    if(!boxes) measure();
+    const grow = i => {
+      const d = Math.abs(i - idx);
+      return d > 2 ? 0 : boxes[i].w * GROW * LENS[d];
+    };
+    /* how far word i has to move to give the growth between it and the focus
+       somewhere to go */
+    const shove = i => {
+      if(idx < 0 || i === idx) return 0;
+      const dir = i < idx ? -1 : 1;
+      let sum = grow(idx) / 2;
+      for(let j = Math.min(i, idx) + 1; j < Math.max(i, idx); j++) sum += grow(j);
+      const d = Math.abs(i - idx);
+      if(d <= 2) return dir * (sum + grow(i) / 2);
+      return dir * sum * (TAIL[d - 3] || 0);
+    };
     toks.forEach((t, i) => {
       const d = idx < 0 ? 99 : Math.abs(i - idx);
-      /* room opens almost fully for the neighbours, so their fields have
-         somewhere to go; how brightly those fields show falls away faster,
-         so the word under the pointer is plainly the one being read */
-      t.style.setProperty("--spread", d === 0 ? 1 : d === 1 ? .92 : d === 2 ? .7 : 0);
-      t.style.setProperty("--mag",    d === 0 ? 1 : d === 1 ? .45 : d === 2 ? .16 : 0);
+      const lens = d > 2 ? 0 : LENS[d];
+      t.style.setProperty("--lens", lens);
+      t.style.setProperty("--push", shove(i).toFixed(2) + "px");
+      t.style.setProperty("--hide", idx < 0 ? 0 : (.66 * (1 - lens)).toFixed(3));
+      /* only one field at a time. Five overlapping fields were unreadable,
+         and reading one is the whole point of stopping on a word. */
+      t.style.setProperty("--mag", d === 0 ? 1 : 0);
+      t.classList.toggle("at", d === 0);
     });
     p.classList.toggle("inspect", idx >= 0);
   };
-  const nearest = (x, y) => {
+
+  /* Which word the pointer is on. A word owns the full height of its line and
+     the gap to its neighbours, so there is nowhere along a line that answers
+     with nothing: sliding never flickers through a dead spot. */
+  const hit = (cx, cy) => {
     if(!boxes) measure();
+    const pr = p.getBoundingClientRect();
+    const x = cx - pr.left, y = cy - pr.top;
+    if(x < -40 || y < -30 || x > pr.width + 40 || y > pr.height + 30) return -1;
     let best = -1, bd = Infinity;
     boxes.forEach((b, i) => {
       const dy = Math.abs(b.y - y);
-      if(dy > b.h * 1.3) return;                 /* another line */
-      const d = Math.abs(b.x - x) + dy * .5;
+      if(dy > b.h * .85) return;                       /* a different line */
+      const dx = Math.max(0, Math.abs(b.x - x) - b.w / 2);
+      const d = dx + dy * .25;
       if(d < bd){ bd = d; best = i; }
     });
-    return bd < 200 ? best : -1;
+    return bd < 90 ? best : -1;
   };
-  const move = (x, y) => apply(nearest(x, y));
-  const off = () => { apply(-1); boxes = null; };
 
-  p.addEventListener("pointerenter", measure);
+  /* Hovering follows the pointer. A click holds a word still so its field can
+     actually be read, because a field that vanishes the moment you look away
+     from the word cannot be read at all. Clicking it again lets go. */
+  const hover = (x, y) => { if(pinned < 0) apply(hit(x, y)); };
+  const pin = (x, y) => {
+    const i = hit(x, y);
+    pinned = (i < 0 || i === pinned) ? -1 : i;
+    apply(pinned < 0 ? i : pinned);
+  };
+
   p.addEventListener("pointermove", e => {
-    if(e.pointerType !== "touch") move(e.clientX, e.clientY);
+    if(e.pointerType !== "touch") hover(e.clientX, e.clientY);
   });
-  p.addEventListener("pointerleave", off);
+  p.addEventListener("pointerleave", () => { if(pinned < 0) apply(-1); });
+  p.addEventListener("click", e => pin(e.clientX, e.clientY));
+
+  /* On a finger there is no hover, so the drag IS the gesture: the bulge
+     tracks the finger, and where it is lifted is where it stays. */
+  let slid = false;
   p.addEventListener("touchstart", e => {
-    measure(); const t = e.touches[0]; if(t) move(t.clientX, t.clientY);
+    const t = e.touches[0]; if(!t) return;
+    slid = false; pinned = -1; measure(); apply(hit(t.clientX, t.clientY));
   }, { passive:true });
   p.addEventListener("touchmove", e => {
-    const t = e.touches[0]; if(t) move(t.clientX, t.clientY);
+    const t = e.touches[0]; if(!t) return;
+    slid = true; apply(hit(t.clientX, t.clientY));
   }, { passive:true });
-  p.addEventListener("touchend", off);
-  p.addEventListener("touchcancel", off);
+  p.addEventListener("touchend", () => { pinned = at; }, { passive:true });
+
+  /* letting go of it: anywhere else, or escape */
+  addEventListener("pointerdown", e => {
+    if(pinned >= 0 && !p.contains(e.target)){ pinned = -1; apply(-1); }
+  }, true);
+  addEventListener("keydown", e => {
+    if(e.key === "Escape" && at >= 0){ pinned = -1; apply(-1); }
+  });
   addEventListener("resize", () => { boxes = null; });
 }
 

@@ -122,10 +122,36 @@ body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
   white-space:pre-wrap;word-break:break-word;color:var(--ink)}
 /* finished, the words give back the room they were holding */
 .reply.done .tok{--mag:0;--spread:0}
-.reply.done{--band:1.65em;
+/* A touch airier than prose needs, because the finished text is also the
+   thing you explore: the fields hang below their words, and a band with no
+   slack in it meant every field landed squarely on the next line. Paid once,
+   in the settled layout, rather than by moving the paragraph when the
+   pointer arrives. */
+.reply.done{--band:2.05em;
   transition:line-height .55s cubic-bezier(.3,0,.2,1),margin-top .55s cubic-bezier(.3,0,.2,1)}
-/* exploring reopens the band, so the fields have somewhere to be again */
-.reply.done.inspect{--band:88px}
+/* Exploring does NOT reopen the band, and does not give the words back their
+   padding either. Both of those relaid the paragraph out under the pointer:
+   the line you were reading dropped 60px, the word you were aiming at slid
+   sideways, and every frame of that motion changed what you were pointing at.
+   A magnifier that moves its subject is not a magnifier. The finished text
+   now holds absolutely still, and everything inspection does is drawn on top
+   of it: scale is a transform, which takes no space, and a field is already
+   absolutely positioned, so it has never taken any. */
+.reply.done .tok{
+  /* The bulge, and the room made for it. Both are transforms, so the line is
+     not laid out again and the word under the pointer stays exactly where the
+     pointer found it; the neighbours slide a few pixels to give back the
+     space the growth takes, which is the part that makes it read as a lens
+     rather than as one word quietly getting bigger. */
+  transform:translateX(var(--push,0px)) scale(calc(1 + .13 * var(--lens,0)));
+  z-index:calc(1 + var(--lens,0) * 10)}
+/* the sentence recedes so the field can be read over it. Driven by its own
+   variable rather than by --lens, so letting go eases back instead of
+   snapping when the inspect class comes off. */
+.reply.done .tok .word{opacity:calc(1 - var(--hide,0))}
+.reply.done.inspect .tok.at .word{color:var(--clay)}
+.reply.done .tok{cursor:default}
+.reply.done.ready .tok{cursor:pointer}
 
 .tok{position:relative;display:inline-block;white-space:pre;vertical-align:baseline;
   line-height:1.3;text-align:center;
@@ -135,9 +161,11 @@ body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
      neighbour's. Room has to open faster than the field appears. */
   padding-left:calc(var(--pad,0ch) * var(--spread,1));
   padding-right:calc(var(--pad,0ch) * var(--spread,1));
-  transition:padding .26s cubic-bezier(.3,0,.2,1)}
+  transform-origin:50% 50%;
+  transition:padding .26s cubic-bezier(.3,0,.2,1),
+             transform .2s cubic-bezier(.3,0,.2,1)}
 .tok .word{display:inline-block;line-height:1.3;opacity:0;
-  transition:opacity .16s ease,color .3s ease}
+  transition:opacity .2s ease,color .3s ease}
 .tok.set .word{opacity:1;color:var(--ink)}
 
 /* The lines back to the word. Without them the field reads as a list that
@@ -175,8 +203,18 @@ body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
   transition:opacity .4s ease,visibility 0s linear .4s}
 .reply.done.inspect .fan{opacity:var(--mag,0);visibility:visible;
   transition:opacity .26s ease}
-.reply.done.inspect .fan i{opacity:var(--o,.35)}
+.reply.done.inspect .fan i{
+  /* Read over the paragraph now rather than in a gap opened for it, so each
+     row carries its own piece of background with it, a shade above the page
+     so the field sits plainly on top of the sentence. Opacity still ranks the
+     candidates, off a much higher floor: during the animation a 0.8% row is
+     a glimpse, but here it is something somebody has stopped to read. */
+  opacity:calc(.52 + var(--o,.35) * .48);
+  background:#1d1d1d;box-shadow:0 0 0 5px #1d1d1d;border-radius:3px}
 .reply.done.inspect .fan i.win{opacity:1}
+/* four, not six. The tail of a field is a row of 0.01%s, and six rows reached
+   two lines down the paragraph. */
+.reply.done.inspect .fan i:nth-child(n+5){opacity:0}
 
 /* the share it was taken at, rising away above the line */
 .lift{position:absolute;left:50%;top:-2px;transform:translateX(-50%);

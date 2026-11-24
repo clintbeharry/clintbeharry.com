@@ -122,10 +122,36 @@ body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
   white-space:pre-wrap;word-break:break-word;color:var(--ink)}
 /* finished, the words give back the room they were holding */
 .reply.done .tok{--mag:0;--spread:0}
-.reply.done{--band:1.65em;
+/* A touch airier than prose needs, because the finished text is also the
+   thing you explore: the fields hang below their words, and a band with no
+   slack in it meant every field landed squarely on the next line. Paid once,
+   in the settled layout, rather than by moving the paragraph when the
+   pointer arrives. */
+.reply.done{--band:2.05em;
   transition:line-height .55s cubic-bezier(.3,0,.2,1),margin-top .55s cubic-bezier(.3,0,.2,1)}
-/* exploring reopens the band, so the fields have somewhere to be again */
-.reply.done.inspect{--band:88px}
+/* Exploring does NOT reopen the band, and does not give the words back their
+   padding either. Both of those relaid the paragraph out under the pointer:
+   the line you were reading dropped 60px, the word you were aiming at slid
+   sideways, and every frame of that motion changed what you were pointing at.
+   A magnifier that moves its subject is not a magnifier. The finished text
+   now holds absolutely still, and everything inspection does is drawn on top
+   of it: scale is a transform, which takes no space, and a field is already
+   absolutely positioned, so it has never taken any. */
+.reply.done .tok{
+  /* The bulge, and the room made for it. Both are transforms, so the line is
+     not laid out again and the word under the pointer stays exactly where the
+     pointer found it; the neighbours slide a few pixels to give back the
+     space the growth takes, which is the part that makes it read as a lens
+     rather than as one word quietly getting bigger. */
+  transform:translateX(var(--push,0px)) scale(calc(1 + .13 * var(--lens,0)));
+  z-index:calc(1 + var(--lens,0) * 10)}
+/* the sentence recedes so the field can be read over it. Driven by its own
+   variable rather than by --lens, so letting go eases back instead of
+   snapping when the inspect class comes off. */
+.reply.done .tok .word{opacity:calc(1 - var(--hide,0))}
+.reply.done.inspect .tok.at .word{color:var(--clay)}
+.reply.done .tok{cursor:default}
+.reply.done.ready .tok{cursor:pointer}
 
 .tok{position:relative;display:inline-block;white-space:pre;vertical-align:baseline;
   line-height:1.3;text-align:center;
@@ -135,9 +161,11 @@ body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
      neighbour's. Room has to open faster than the field appears. */
   padding-left:calc(var(--pad,0ch) * var(--spread,1));
   padding-right:calc(var(--pad,0ch) * var(--spread,1));
-  transition:padding .26s cubic-bezier(.3,0,.2,1)}
+  transform-origin:50% 50%;
+  transition:padding .26s cubic-bezier(.3,0,.2,1),
+             transform .2s cubic-bezier(.3,0,.2,1)}
 .tok .word{display:inline-block;line-height:1.3;opacity:0;
-  transition:opacity .16s ease,color .3s ease}
+  transition:opacity .2s ease,color .3s ease}
 .tok.set .word{opacity:1;color:var(--ink)}
 
 /* The lines back to the word. Without them the field reads as a list that
@@ -175,8 +203,18 @@ body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
   transition:opacity .4s ease,visibility 0s linear .4s}
 .reply.done.inspect .fan{opacity:var(--mag,0);visibility:visible;
   transition:opacity .26s ease}
-.reply.done.inspect .fan i{opacity:var(--o,.35)}
+.reply.done.inspect .fan i{
+  /* Read over the paragraph now rather than in a gap opened for it, so each
+     row carries its own piece of background with it, a shade above the page
+     so the field sits plainly on top of the sentence. Opacity still ranks the
+     candidates, off a much higher floor: during the animation a 0.8% row is
+     a glimpse, but here it is something somebody has stopped to read. */
+  opacity:calc(.52 + var(--o,.35) * .48);
+  background:#1d1d1d;box-shadow:0 0 0 5px #1d1d1d;border-radius:3px}
 .reply.done.inspect .fan i.win{opacity:1}
+/* four, not six. The tail of a field is a row of 0.01%s, and six rows reached
+   two lines down the paragraph. */
+.reply.done.inspect .fan i:nth-child(n+5){opacity:0}
 
 /* the share it was taken at, rising away above the line */
 .lift{position:absolute;left:50%;top:-2px;transform:translateX(-50%);
@@ -1549,55 +1587,124 @@ function inspector(p){
   if(!p) return;
   const toks = [...p.querySelectorAll(".tok")];
   if(!toks.length) return;
-  let boxes = null;
+  p.classList.add("ready");
 
-  /* measured in the settled layout and held for the gesture: the words move
-     as the bulge opens, and chasing their live positions makes the thing
-     under the pointer squirm away from it */
+  /* Offsets inside the paragraph, not viewport coordinates, so scrolling
+     never invalidates them. Nothing in the finished text moves any more, so
+     one measurement holds for the life of the paragraph. */
+  let boxes = null;
   const measure = () => {
+    const pr = p.getBoundingClientRect();
     boxes = toks.map(t => {
       const r = t.getBoundingClientRect();
-      return { x:(r.left + r.right) / 2, y:(r.top + r.bottom) / 2, h:r.height };
+      return { x:(r.left + r.right) / 2 - pr.left,
+               y:(r.top + r.bottom) / 2 - pr.top,
+               w:r.width, h:r.height };
     });
   };
+
+  /* the bulge: full size under the pointer, falling away over two words
+     either side, so the eye is led along the sentence rather than snapped to
+     one word */
+  const LENS = [1, .5, .22];
+  const GROW = .13;
+  /* and the way the displacement is handed back. Each word is pushed out by
+     half its own growth plus all the growth between it and the focus, which
+     is what keeps the gaps even; that total would otherwise shift the whole
+     rest of the line sideways, and a word that has drifted is a word you
+     aim at and miss. So it is walked back to nothing over the next three,
+     compressing three gaps by a pixel or two each, which nobody sees. */
+  const TAIL = [.6, .28, .1];
+
+  let at = -1, pinned = -1;
   const apply = idx => {
+    if(idx === at) return;
+    at = idx;
+    if(!boxes) measure();
+    const grow = i => {
+      const d = Math.abs(i - idx);
+      return d > 2 ? 0 : boxes[i].w * GROW * LENS[d];
+    };
+    /* how far word i has to move to give the growth between it and the focus
+       somewhere to go */
+    const shove = i => {
+      if(idx < 0 || i === idx) return 0;
+      const dir = i < idx ? -1 : 1;
+      let sum = grow(idx) / 2;
+      for(let j = Math.min(i, idx) + 1; j < Math.max(i, idx); j++) sum += grow(j);
+      const d = Math.abs(i - idx);
+      if(d <= 2) return dir * (sum + grow(i) / 2);
+      return dir * sum * (TAIL[d - 3] || 0);
+    };
     toks.forEach((t, i) => {
       const d = idx < 0 ? 99 : Math.abs(i - idx);
-      /* room opens almost fully for the neighbours, so their fields have
-         somewhere to go; how brightly those fields show falls away faster,
-         so the word under the pointer is plainly the one being read */
-      t.style.setProperty("--spread", d === 0 ? 1 : d === 1 ? .92 : d === 2 ? .7 : 0);
-      t.style.setProperty("--mag",    d === 0 ? 1 : d === 1 ? .45 : d === 2 ? .16 : 0);
+      const lens = d > 2 ? 0 : LENS[d];
+      t.style.setProperty("--lens", lens);
+      t.style.setProperty("--push", shove(i).toFixed(2) + "px");
+      t.style.setProperty("--hide", idx < 0 ? 0 : (.66 * (1 - lens)).toFixed(3));
+      /* only one field at a time. Five overlapping fields were unreadable,
+         and reading one is the whole point of stopping on a word. */
+      t.style.setProperty("--mag", d === 0 ? 1 : 0);
+      t.classList.toggle("at", d === 0);
     });
     p.classList.toggle("inspect", idx >= 0);
   };
-  const nearest = (x, y) => {
+
+  /* Which word the pointer is on. A word owns the full height of its line and
+     the gap to its neighbours, so there is nowhere along a line that answers
+     with nothing: sliding never flickers through a dead spot. */
+  const hit = (cx, cy) => {
     if(!boxes) measure();
+    const pr = p.getBoundingClientRect();
+    const x = cx - pr.left, y = cy - pr.top;
+    if(x < -40 || y < -30 || x > pr.width + 40 || y > pr.height + 30) return -1;
     let best = -1, bd = Infinity;
     boxes.forEach((b, i) => {
       const dy = Math.abs(b.y - y);
-      if(dy > b.h * 1.3) return;                 /* another line */
-      const d = Math.abs(b.x - x) + dy * .5;
+      if(dy > b.h * .85) return;                       /* a different line */
+      const dx = Math.max(0, Math.abs(b.x - x) - b.w / 2);
+      const d = dx + dy * .25;
       if(d < bd){ bd = d; best = i; }
     });
-    return bd < 200 ? best : -1;
+    return bd < 90 ? best : -1;
   };
-  const move = (x, y) => apply(nearest(x, y));
-  const off = () => { apply(-1); boxes = null; };
 
-  p.addEventListener("pointerenter", measure);
+  /* Hovering follows the pointer. A click holds a word still so its field can
+     actually be read, because a field that vanishes the moment you look away
+     from the word cannot be read at all. Clicking it again lets go. */
+  const hover = (x, y) => { if(pinned < 0) apply(hit(x, y)); };
+  const pin = (x, y) => {
+    const i = hit(x, y);
+    pinned = (i < 0 || i === pinned) ? -1 : i;
+    apply(pinned < 0 ? i : pinned);
+  };
+
   p.addEventListener("pointermove", e => {
-    if(e.pointerType !== "touch") move(e.clientX, e.clientY);
+    if(e.pointerType !== "touch") hover(e.clientX, e.clientY);
   });
-  p.addEventListener("pointerleave", off);
+  p.addEventListener("pointerleave", () => { if(pinned < 0) apply(-1); });
+  p.addEventListener("click", e => pin(e.clientX, e.clientY));
+
+  /* On a finger there is no hover, so the drag IS the gesture: the bulge
+     tracks the finger, and where it is lifted is where it stays. */
+  let slid = false;
   p.addEventListener("touchstart", e => {
-    measure(); const t = e.touches[0]; if(t) move(t.clientX, t.clientY);
+    const t = e.touches[0]; if(!t) return;
+    slid = false; pinned = -1; measure(); apply(hit(t.clientX, t.clientY));
   }, { passive:true });
   p.addEventListener("touchmove", e => {
-    const t = e.touches[0]; if(t) move(t.clientX, t.clientY);
+    const t = e.touches[0]; if(!t) return;
+    slid = true; apply(hit(t.clientX, t.clientY));
   }, { passive:true });
-  p.addEventListener("touchend", off);
-  p.addEventListener("touchcancel", off);
+  p.addEventListener("touchend", () => { pinned = at; }, { passive:true });
+
+  /* letting go of it: anywhere else, or escape */
+  addEventListener("pointerdown", e => {
+    if(pinned >= 0 && !p.contains(e.target)){ pinned = -1; apply(-1); }
+  }, true);
+  addEventListener("keydown", e => {
+    if(e.key === "Escape" && at >= 0){ pinned = -1; apply(-1); }
+  });
   addEventListener("resize", () => { boxes = null; });
 }
 
