@@ -219,7 +219,20 @@ const FAN_N = 6;        /* candidates shown per word */
    and settles underneath only once the word has been taken. Opening
    downwards meant the band had to be as deep as the field was tall, and the
    collapse into finished prose was a long way to fall. */
-const OPEN_X = 18, OPEN_STEP_X = 13, OPEN_Y = 0, OPEN_ROW = 13;
+/* A fan, not a list. Stepping each candidate the same distance right and the
+   same distance down drew six parallel lines at one angle, which is an angled
+   list wearing a fan's clothes. They now sit on an arc that opens above and
+   below the word, at reaches that differ per candidate, so the lines leave at
+   real angles and real lengths. */
+const FAN_A0 = 38, FAN_A1 = -52;     /* degrees: first candidate, last */
+const FAN_R0 = 46, FAN_R1 = 116;     /* and how far out each reaches */
+/* a stable wobble per word, so the arc is never mechanically even and the
+   same word always sits the same way */
+const wobble = w => {
+  let h = 2166136261;
+  for(let i = 0; i < w.length; i++){ h ^= w.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return ((h >>> 0) % 1000) / 1000 - .5;
+};
 const REST_GAP = 4, REST_ROW = 11;   /* these two match --gap and --row */
 const MAX_CH = 13;      /* a long one is clipped so it cannot shove the line apart */
 const pause = ms => new Promise(r => setTimeout(r, ms));
@@ -254,9 +267,12 @@ function buildTok(step){
        shots were landing near invisible, and a candidate worth nothing is
        still worth seeing */
     row.style.setProperty("--o", (.24 + Math.sqrt(c.p) * .66).toFixed(3));
-    row.style.setProperty("--cx", "0%");       /* hang to the right */
-    row.style.setProperty("--x", (OPEN_X + i * OPEN_STEP_X) + "px");
-    row.style.setProperty("--y", (OPEN_Y + i * OPEN_ROW) + "px");
+    const f = FAN_N > 1 ? i / (FAN_N - 1) : 0;
+    const a = (FAN_A0 + (FAN_A1 - FAN_A0) * f) * Math.PI / 180;
+    const R = FAN_R0 + (FAN_R1 - FAN_R0) * f + wobble(c.w) * 26;
+    row.style.setProperty("--cx", "0%");       /* reach out to the right */
+    row.style.setProperty("--x", (Math.cos(a) * R).toFixed(1) + "px");
+    row.style.setProperty("--y", (-Math.sin(a) * R).toFixed(1) + "px");
     if(i === 0) row.classList.add("win");
     fan.appendChild(row);
   });
@@ -285,8 +301,9 @@ function wires(tok, fan, step){
     ln.setAttribute("x2", (x - 3).toFixed(1)); ln.setAttribute("y2", y.toFixed(1));
     const p = step.cands[i] ? step.cands[i].p : 0;
     ln.setAttribute("stroke", i === 0 ? "#d97757" : "#8a8a8a");
-    ln.setAttribute("stroke-width", (0.6 + Math.sqrt(p) * 1.1).toFixed(2));
-    ln.setAttribute("stroke-opacity", (0.14 + Math.sqrt(p) * 0.55).toFixed(2));
+    /* the likelier the candidate, the heavier the line to it */
+    ln.setAttribute("stroke-width", (0.5 + Math.sqrt(p) * 2.1).toFixed(2));
+    ln.setAttribute("stroke-opacity", (0.2 + Math.sqrt(p) * 0.68).toFixed(2));
     svg.appendChild(ln);
   });
   svg.setAttribute("width", Math.max(1, tb.width));
@@ -338,6 +355,9 @@ async function writeReply(bot, G, my, at){
       row.style.setProperty("--x", "0px");
       row.style.setProperty("--y", (REST_GAP + i * REST_ROW) + "px");
     });
+    /* the lines go when the words they point at go, or the moment between
+       the field fading and the row settling is a spray of naked lines */
+    if(w) w.classList.remove("in");
     fan.classList.add("out");
 
     /* the share it was taken at, rising away: a few of them are in the air
@@ -352,7 +372,6 @@ async function writeReply(bot, G, my, at){
     if(my !== token) return;
     tok.classList.add("set");
     await pause(40);
-    if(w) w.classList.remove("in");
     fan.classList.remove("in", "out");
     fan.classList.add("rest");
     rows.forEach((c, i) => { if(i && i < 4) c.classList.add("keep"); });

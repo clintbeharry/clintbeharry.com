@@ -13,7 +13,7 @@ let G=null, NQ=0;
 const $=id=>document.getElementById(id);
 const FONT='ui-sans-serif,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif';
 const MONO='ui-monospace,"SF Mono",Menlo,Consolas,monospace';
-const CLAY=0xd97757, GREY=0x5e5e5e, WIRE=0x8a5a44;
+const CLAY=0xd97757, GREY=0x6e6e6e, WIRE=0xa96c55;
 const CLAYC="#d97757", INKC="#d4d4d4";
 
 /* ------------------------------------------------------------------ stage */
@@ -33,7 +33,10 @@ let DPR=Math.min(2,window.devicePixelRatio||1), VW=1000, VH=540;
 let PXS=1;
 function resize(){
   VW=stageEl.clientWidth||1000; VH=stageEl.clientHeight||Math.round(VW*.54);
-  PXS=VW/1000;
+  /* Type cannot scale all the way down with the stage or a phone gets four
+     pixel words. Below about 600px it holds a floor and the layout, which
+     does scale, simply carries fewer things per inch. */
+  PXS=cl(VW/1000,.95,1.25);
   renderer.setPixelRatio(DPR); renderer.setSize(VW,VH,false);
   ov.width=Math.round(VW*DPR); ov.height=Math.round(VH*DPR);
   ov.style.width=VW+"px"; ov.style.height=VH+"px";
@@ -93,7 +96,11 @@ function sync(){
   const P=egeo.attributes.position.array, C=egeo.attributes.color.array;
   const n=Math.min(EDGES.length,MAXE);
   for(let i=0;i<n;i++){
-    const e=EDGES[i], A=e.a.p, B=e.b.p, k=i*6, c=i*8, g=e.op*(.14+e.w*.44);
+    /* GL lines are one pixel wide whatever you ask for, so an edge's weight
+       has to arrive as brightness. The range was narrow enough that a strong
+       link and a weak one looked alike; it is wide now, and starts higher, so
+       the mesh holds up on a small screen. */
+    const e=EDGES[i], A=e.a.p, B=e.b.p, k=i*6, c=i*8, g=e.op*(.15+e.w*.44);
     P[k]=A.x;P[k+1]=A.y;P[k+2]=A.z;P[k+3]=B.x;P[k+4]=B.y;P[k+5]=B.z;
     /* strength in the alpha channel, colour left at full value: folding it
        into rgb draws an opaque dark line the moment blending is not additive */
@@ -131,12 +138,15 @@ function labels(){
     const v=n.p.clone().project(cam);
     if(v.z<-1||v.z>1) continue;
     const d=cam.position.distanceTo(n.p);
-    list.push({n,x:(v.x*.5+.5)*VW,y:(-v.y*.5+.5)*VH,s:cl(REF/d,.3,2.3),z:v.z});
+    /* the far end of the range bottomed out at .3, which on a phone stage is
+       four pixels of type. Depth still reads, it just reads over a narrower
+       range than it used to. */
+    list.push({n,x:(v.x*.5+.5)*VW,y:(-v.y*.5+.5)*VH,s:cl(REF/d,.60,2.1),z:v.z});
   }
   list.sort((a,b)=>b.z-a.z);
   ctx.textAlign="center";
   for(const it of list){
-    const fs=it.n.size*11.5*it.s*PXS;
+    const fs=it.n.size*12.5*it.s*PXS;
     if(fs<4.2*PXS) continue;
     /* words on the reply line share a baseline, the way type in a chat thread
        does, so a size still easing cannot ride them up or down */
@@ -231,8 +241,36 @@ function frame(now){
 /* The question's words sit on a line, GAP apart. Fixed at 100 that line runs
    off the stage the moment a question has more than about seven words, so it
    closes up for longer ones instead. */
-let GAP=100;
-const RX=400, RY=150, RZ=190;
+let GAP=118;
+/* The box used to be a fixed wide slab, which is right on a desktop stage and
+   wrong on a phone, where the space available is tall and narrow. Its shape
+   and the camera distances now come from the stage's own proportions, so the
+   same sequence fills whichever it is given. */
+let RX=400, RY=150, RZ=190;
+let CAM2=620, CAM3=900, ENDR=640;
+let COLS=1;                 /* question words per row in steps one and two */
+let ROWG=168;               /* and how far apart those rows sit */
+/* where the i-th question word sits while its neighbourhood is around it */
+function seat(i){
+  const r=Math.floor(i/COLS), c=i%COLS, rows=Math.ceil(NQ/COLS);
+  const wide=Math.min(COLS, NQ-r*COLS);        /* a short last row centres */
+  return { x:(c-(wide-1)/2)*GAP, y:-(r-(rows-1)/2)*ROWG };
+}
+const TANH=()=>Math.tan(cam.fov*Math.PI/360);
+/* the distance at which a box of these half-extents fills the frame */
+function fitCam(mx,my,pad){
+  const t=TANH(), A=VW/VH;
+  return Math.max(my*pad/t, mx*pad/(t*A));
+}
+function fitStage(){
+  const A=VW/VH;
+  const wide=cl((A-.70)/(1.85-.70));      /* 0 on a tall phone, 1 on a desktop */
+  RX=lerp(205,400,wide); RY=lerp(315,180,wide); RZ=lerp(170,190,wide);
+  /* a tight margin on purpose: the slack was making everything smaller than
+     the stage could have carried */
+  CAM3=fitCam(RX,RY,1.10);
+  ENDR=fitCam(RX*.58,RY*.58,1.12);
+}
 const LINE_Y=104, SCALE=1.05, PER=1600;
 const pct=p=> p>=.995 ? (Math.floor(p*1000)/10).toFixed(1)+"%"
             : p>=.1    ? (p*100).toFixed(0)+"%"
@@ -258,9 +296,14 @@ function hud(main){
 /* =================================================================== build */
 let recs, nodes, lay, cube, cubeHome, pins, stubs, words, kids, concepts, vis;
 function buildCloud(){
+  /* A hundred and thirty words at a legible size do not fit a phone. Type
+     that shrinks to fit is not a fix, it is the same problem written smaller,
+     so the cloud thins out instead and what is left can be read. */
+  const DENSE=cl((VW-330)/(880-330));
+  const POOL=Math.round(lerp(15,48,DENSE)), KIDS=Math.round(lerp(5,13,DENSE));
   recs=[];
   G.q.forEach((d,i)=>recs.push({w:d.w,role:0,parent:i,xy:null,rel:1,h3:hash3(d.w)}));
-  G.q.forEach((d,i)=>d.assoc.forEach((a,k)=>
+  G.q.forEach((d,i)=>d.assoc.slice(0,KIDS).forEach((a,k)=>
     recs.push({w:a.w,role:1,parent:i,k,xy:a.xy,rel:rel1(a.xy),h3:hash3(a.w)})));
   const best=new Map();
   G.reply.forEach(r=>r.cands.forEach(cd=>{const k=(cd.w||"").trim();
@@ -269,7 +312,7 @@ function buildCloud(){
   const take=w=>{const k=(w||"").toLowerCase();
     if(/^[A-Za-z][A-Za-z'-]{1,}$/.test(w)&&!seen.has(k)){seen.add(k);pool.push(w);}};
   G.emerge.forEach(take); G.reply.forEach(r=>r.cands.forEach(cd=>take((cd.w||"").trim())));
-  pool.slice(0,48).forEach(w=>recs.push({w,role:2,parent:-1,h3:hash3(w),
+  pool.slice(0,POOL).forEach(w=>recs.push({w,role:2,parent:-1,h3:hash3(w),
     rel:cl(Math.pow(best.get(w)||.003,.18))}));
   const cnt=[0,0,0];
   recs.forEach(r=>r.ord=cnt[r.role]++);
@@ -289,11 +332,14 @@ function buildCloud(){
       if(r.role===0) return c;
       const R=22+(1-r.rel)*38, th=ang(r);
       return V3(c.x+Math.cos(th)*R*.75,c.y+Math.sin(th)*R*.95,c.z+r.h3[2]*2.6*R); },
-    r=>{ const rad=(r.role===0?.10:(1-r.rel))*.97, th=ang(r);
+    /* the question's own words used to sit at radius .10, which on any small
+       stage is six words in the same spot. Far enough out to be told apart,
+       still nearer the middle than anything they attracted. */
+    r=>{ const rad=(r.role===0?.34:(1-r.rel))*.97, th=ang(r);
       const ph=Math.acos(cl(r.h3[2]*2,-1,1));
       return V3(Math.sin(ph)*Math.cos(th)*rad*RX,Math.cos(ph)*rad*RY,
                 Math.sin(ph)*Math.sin(th)*rad*RZ); },
-    r=>{ const th=ang(r), rad=r.role===0?.20:.93;
+    r=>{ const th=ang(r), rad=r.role===0?.36:.93;
       return V3(Math.cos(th)*rad*RX,
                 (r.role===0?(r.parent-(NQ-1)/2)*.5:r.h3[1]*2.1)*RY*.42,
                 Math.sin(th)*rad*RZ); },
@@ -311,13 +357,13 @@ function buildCloud(){
     lay.forEach(L=>L[k].set(cl(L[k].x*f[0],-RX,RX),cl(L[k].y*f[1],-RY,RY),
                             cl(L[k].z*f[2],-RZ,RZ)));
   }
-  /* step-2 home: the word on its line, its neighbourhood around it in depth */
+  /* step-2 home: each word in its seat, its neighbourhood around it in depth */
   recs.forEach(r=>{
-    if(r.role===0){ r.p2=V3((r.parent-(NQ-1)/2)*GAP,0,0); return; }
+    if(r.role===0){ const t=seat(r.parent); r.p2=V3(t.x,t.y,0); return; }
     if(r.role===2){ r.p2=null; return; }
-    const a=V3((r.parent-(NQ-1)/2)*GAP,0,0);
+    const a=seat(r.parent);
     const R=36+(1-r.rel)*30, th=ang(r);
-    r.p2=V3(a.x+Math.cos(th)*R,Math.sin(th)*R*1.45,(r.rel-.45)*200);
+    r.p2=V3(a.x+Math.cos(th)*R, a.y+Math.sin(th)*R*1.45, (r.rel-.45)*200);
   });
   nodes=recs.map((r,j)=>{
     const st=r.p2||lay[j][0];
@@ -338,20 +384,34 @@ async function play(data){
   if(data) G=data;
   if(!G) return;
   NQ=G.q.length;
-  GAP=Math.min(100,620/Math.max(1,NQ-1));
   note();
   const me=++run;
   paused=false; $("pause").textContent="Pause";
   NODES.length=0; EDGES.length=0; HITS.length=0; LATE=null;
   lineMat.blending=THREE.AdditiveBlending; lineMat.needsUpdate=true;
-  CAMR=620; CAMA=0; CAMB=0; CAMY=0; LOOK=V3(0,0,0); BOXR=[RX,RY,RZ];
+  fitStage();
+  /* Steps one and two seat the question's words with room around each for
+     its neighbourhood. Six of those will not fit across a phone at a size
+     anyone can read, so the line wraps, the way the question itself wraps in
+     the bubble above. The camera is then backed off to hold whatever shape
+     that came out as, which is what makes it fill the stage rather than
+     float small in the middle of it. */
+  COLS = (VW/VH) >= 1.45 ? NQ
+       : Math.max(2, Math.min(NQ, Math.round(Math.sqrt(NQ*(VW/VH)*1.6))));
+  const rows = Math.ceil(NQ/COLS);
+  /* the width decides how far back the camera stands, and the rows then open
+     out to use whatever height that leaves, rather than huddling in a band
+     across the middle of a tall stage */
+  CAM2 = fitCam((COLS-1)/2*GAP + 95, 0, 1.08);
+  ROWG = rows > 1 ? cl((TANH()*CAM2 - 118)*2/(rows-1), 150, 300) : 168;
+  CAMR=CAM2; CAMA=0; CAMB=0; CAMY=0; LOOK=V3(0,0,0); BOXR=[RX,RY,RZ];
   resize();
   /* Where the answer begins. The fold has to end on the spot the first word
      will occupy, or the cursor appears in one place and the writing starts in
      another. Derived from the seat the camera finishes the fold in, so it
      stays put whatever the stage is sized to. */
   {
-    const hH=640*Math.tan(cam.fov*Math.PI/360), hW=hH*(VW/VH);
+    const hH=ENDR*Math.tan(cam.fov*Math.PI/360), hW=hH*(VW/VH);
     CARET=V3(-hW+22, 22+hH-34, 0);
   }
   const K=buildCloud();
@@ -425,12 +485,13 @@ async function play(data){
     };
     inK.forEach(i=>{
       inK.map(j=>j===i?null:{j,d:lay[i][k].distanceTo(lay[j][k])}).filter(Boolean)
-        .sort((p,q)=>p.d-q.d).slice(0,4).forEach(o=>join(i,o.j,.32));
+        /* nearer neighbours bind harder, and now look it */
+        .sort((p,q)=>p.d-q.d).slice(0,4).forEach((o,k)=>join(i,o.j,.62-k*.11));
     });
     for(let n=0;n<Math.round(inK.length*.3);n++){
       const i=inK[(Math.random()*inK.length)|0];
       const far=inK.filter(j=>j!==i&&lay[i][k].distanceTo(lay[j][k])>RX*.55);
-      if(far.length) join(i,far[(Math.random()*far.length)|0],.2);
+      if(far.length) join(i,far[(Math.random()*far.length)|0],.16);
     }
   }
   /* contact with the wall: one stub per outer word, landing on a face */
@@ -458,7 +519,7 @@ async function play(data){
   const op0=nodes.map(n=>n.op);
   await clock(1700,(_,el)=>{
     const k=io(seg(el,0,1500));
-    CAMR=lerp(620,900,k); CAMA=lerp(0,.24,k); CAMB=lerp(0,30,k);
+    CAMR=lerp(CAM2,CAM3,k); CAMA=lerp(0,.24,k); CAMB=lerp(0,30,k);
     nodes.forEach((n,j)=>{
       const r=recs[j];
       n.h.lerpVectors(from[j],lay[j][0],k);
@@ -468,7 +529,7 @@ async function play(data){
       if(r.role===1) n.size=lerp(n.size,1.0,k);
       if(r.role===0) n.warm=1;
     });
-    EDGES.forEach(e=>{ if(e.frame) e.op=k*.34;
+    EDGES.forEach(e=>{ if(e.frame) e.op=k*.62;
                        else if(!e.layer&&e.layer!==0) e.op=(1-k)*(e.op||0); });
   });
   if(me!==run) return;
@@ -477,11 +538,15 @@ async function play(data){
   /* ---------- 3 · the same space, along different axes ---------- */
   $("step").textContent="3 / 5";
   /* What the pass is doing, in the fewest words that are still true. */
+  /* These are not four pictures of the same thing. Each reads a different
+     slice of the space the words are held in, and what falls near what
+     changes with the slice. That is the whole method: meaning is a position
+     in a space with far more directions than a screen has. */
   const NAMES=[
-    "projecting components 1-3",
-    "projecting components 4-6",
-    "projecting components 7-9",
-    "projecting components 10-12",
+    "associating in dimensions 1-3 of 960",
+    "dimensions 4-6: other words fall together",
+    "dimensions 7-9: finer distinctions",
+    "dimensions 10-12: the last with signal",
   ];
   const MOVE=950, WIRE_T=1500, REST=340;
   /* How long one connection takes to flare and settle. It has to be short
@@ -588,7 +653,7 @@ async function play(data){
      2px, converted to world units at the caret's distance. Measured from the
      camera's FINAL seat, not its current one: the camera is still moving
      while this is being set up. */
-  const ENDCAM=V3(0,0,640);
+  const ENDCAM=V3(0,0,ENDR);
   const pxw=VH/(2*ENDCAM.distanceTo(CARET)*Math.tan(cam.fov*Math.PI/360));
   const CW=2/pxw, TOP=CARET.y+9;
   const cam0=[CAMR,CAMA,CAMB,LOOK.y];
@@ -613,8 +678,8 @@ async function play(data){
        Nothing waits for the shot. The cloud scales with the dolly so its
        apparent size holds until the fold itself takes it. */
     const warm=io(seg(t,850,2400));
-    const ck=io(seg(t,0,1900)), sc=lerp(1,640/900,ck);
-    CAMR=lerp(cam0[0],640,ck); CAMA=lerp(cam0[1],0,ck); CAMB=lerp(cam0[2],0,ck);
+    const ck=io(seg(t,0,1900)), sc=lerp(1,ENDR/CAM3,ck);
+    CAMR=lerp(cam0[0],ENDR,ck); CAMA=lerp(cam0[1],0,ck); CAMB=lerp(cam0[2],0,ck);
     LOOK=V3(0,lerp(cam0[3],22,ck),0);
     BOXR=[RX*sc,RY*sc,RZ*sc];
     R4.forEach(n=>{
