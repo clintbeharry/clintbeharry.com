@@ -78,6 +78,34 @@ function say(t, text, cls){
   return p;
 }
 
+/* ---------------------------------------------------------------------------
+   The roads not taken.
+
+   For every word of every recorded answer, the next few likeliest words the
+   model did NOT use were forced in that word's place offline and the model
+   let run from there. One fork deep, which is as far as a file can go: the
+   whole tree is the model itself, and that is what the download is for.
+
+   Fetched the first time an answer finishes, not with the page: it is a few
+   tens of kilobytes over the wire, and most readers never fork at all.
+--------------------------------------------------------------------------- */
+const BRANCH = {}, WAITING = {};
+window.onBranches = (i, data) => {
+  BRANCH[i] = data;
+  (WAITING[i] || []).forEach(r => r(data)); delete WAITING[i];
+};
+function loadBranches(i){
+  if(BRANCH[i]) return Promise.resolve(BRANCH[i]);
+  return new Promise(resolve => {
+    (WAITING[i] = WAITING[i] || []).push(resolve);
+    if(WAITING[i].length > 1) return;          /* already on its way */
+    const s = document.createElement("script");
+    s.src = "branches/b" + i + ".js";
+    s.onerror = () => window.onBranches(i, null);
+    document.head.appendChild(s);
+  });
+}
+
 /* ---- the one question the page asks ---- */
 function gate(t, text, quiet){
   return new Promise(resolve => {
@@ -134,6 +162,7 @@ async function ask(text){
 
   const seed = findSeed(text);
   let G = seed;
+  const qi = seed ? RECORDED.indexOf(seed) : -1;
 
   if(!G){
     if(!LIVE && !okToLoad){
@@ -187,13 +216,14 @@ async function ask(text){
   if(my !== token) return;
   await collapse($("stage"));
   if(my !== token) return;
-  await writeReply(bt, G, my, at);
+  await writeReply(bt, G, my, at, qi);
   if(my !== token) return;
   /* the controls belong under the finished message, the way a chat puts copy
      and retry there, not above an answer that has not been written yet */
   bt.classList.add("spoken");       /* the caption has nothing left to report */
   actions(bt);
   inspector(bt.querySelector(".reply"));
+  if(qi >= 0) loadBranches(qi);
   scroll();
 }
 
@@ -414,14 +444,28 @@ function wires(tok, fan, field, wi){
 /* The reply, written into the thread a word at a time. Pace carries meaning:
    a word the model was sure of barely pauses, an uncertain one holds long
    enough that its field can be read. */
-async function writeReply(bot, G, my, at){
+async function writeReply(bot, G, my, at, qi){
   const p = el("p", "reply");
   const caret = el("span", "caret");
   p.appendChild(caret);
+  p.__q = qi; p.__base = G.reply; p.__forks = [];
   bot.appendChild(p);
   scroll();
+  await writeWords(p, caret, G.reply, my, 1);
+  caret.remove();
+  p.classList.add("done");
+  scroll();
+}
 
-  for(const step of G.reply){
+/* The words themselves, one at a time, into whatever paragraph and from
+   wherever the caret is. Written once for the first answer and again for
+   every branch taken out of it, because a branch has to arrive the same way
+   the answer did: watching the new path being chosen is the whole argument,
+   and a tail that merely appeared would make the choice look like a result
+   rather than a decision. `rate` runs the second pass quicker, since by then
+   nobody is learning how this works, they are following a fork. */
+async function writeWords(p, caret, steps, my, rate){
+  for(const step of steps){
     if(my !== token) return;
     const { tok, fan, wi, took, field } = buildTok(step);
     /* A real space between words, not just the padding that holds a field
@@ -439,9 +483,9 @@ async function writeReply(bot, G, my, at){
     const w = wires(tok, fan, field, wi);
     fan.classList.add("in");
     if(w) w.classList.add("in");
-    await pause(80);
+    await pause(80 * rate);
     if(my !== token) return;
-    await pause(Math.min(680, Math.max(70, bitsOf(took.p) * 155)));
+    await pause(Math.min(680, Math.max(70, bitsOf(took.p) * 155)) * rate);
     if(my !== token) return;
 
     /* the one taken travels up and left onto the line; the rest slide left
@@ -468,7 +512,7 @@ async function writeReply(bot, G, my, at){
     requestAnimationFrame(() => lift.classList.add("go"));
     setTimeout(() => lift.remove(), 2700);
 
-    await pause(300);
+    await pause(300 * rate);
     if(my !== token) return;
     tok.classList.add("set");
     p.appendChild(caret);          /* and back to the end of the line */
@@ -479,9 +523,6 @@ async function writeReply(bot, G, my, at){
     win.style.setProperty("--x", "0px");
     win.style.setProperty("--y", (REST_GAP + wi * REST_ROW) + "px");
   }
-  caret.remove();
-  p.classList.add("done");
-  scroll();
 }
 
 /* ---------------------------------------------------------------------------
@@ -496,7 +537,12 @@ async function writeReply(bot, G, my, at){
 --------------------------------------------------------------------------- */
 function inspector(p){
   if(!p) return;
-  const toks = [...p.querySelectorAll(".tok")];
+  /* Called again after every fork, and the paragraph is the same paragraph:
+     attaching a second set of listeners to it would leave the first set
+     holding a list of words that no longer exists. The word list is what
+     gets replaced, not the wiring. */
+  if(p.__ins){ p.__ins(); return; }
+  let toks = [...p.querySelectorAll(".tok")];
   if(!toks.length) return;
   p.classList.add("ready");
 
@@ -659,6 +705,180 @@ function inspector(p){
     if(e.key === "Escape" && at >= 0){ pinned = -1; apply(-1); }
   });
   addEventListener("resize", () => { boxes = null; });
+
+  /* ---- the roads not taken, from inside the panel ----
+     A row is a branch. Hovering one dims everything the sentence said after
+     that word and lays the other sentence out underneath it, so both paths
+     are there at once and neither has to be remembered. Taking one rewrites
+     the tail. Letting go puts it back, because a tree you have to tidy up
+     after is not one anybody explores. */
+  const rowsOf = t => [...t.querySelectorAll(".fan i")];
+  let ghost = null;
+  const clearGhost = () => {
+    p.classList.remove("ghosting");
+    toks.forEach(t => t.classList.remove("doomed"));
+    if(ghost){ ghost.remove(); ghost = null; }
+  };
+  const showGhost = (k, row) => {
+    clearGhost();
+    p.classList.add("ghosting");
+    toks.forEach((t, i) => { if(i >= k) t.classList.add("doomed"); });
+    ghost = el("p", "ghost");
+    /* enough of the run-up to hear the sentence turn, not the whole thing
+       again: the paragraph it belongs to is directly above it */
+    const lead = toks.slice(Math.max(0, k - 5), k)
+      .map(t => t.querySelector(".word").textContent)
+      .join(" ").replace(/ ([,.;:!?)\]'’])/g, "$1");
+    const was = el("span", "was");
+    was.textContent = (k > 5 ? "… " : "") + lead;
+    if(k) ghost.appendChild(was);
+    row.reply.forEach((w, i) => {
+      const sp = el("span", i === 0 ? "turn" : "");
+      sp.textContent = ((i || k) && !/^[,.;:!?)\]'’]/.test(w.tok) ? " " : "") + w.tok;
+      ghost.appendChild(sp);
+    });
+    p.appendChild(ghost);
+    /* clear of the panel, which is hanging over the paragraph at this moment
+       and would otherwise be sitting on top of the thing it opened */
+    requestAnimationFrame(() => {
+      if(!ghost) return;
+      const fan = toks[k] && toks[k].querySelector(".fan");
+      const pr = p.getBoundingClientRect();
+      const fr = fan && fan.getBoundingClientRect();
+      const drop = fr && fr.height ? Math.max(10, fr.bottom - pr.bottom + 14) : 10;
+      ghost.style.marginTop = drop.toFixed(0) + "px";
+      ghost.classList.add("in");
+    });
+  };
+
+  /* Which branch a row is, if there is one. A row is takeable when the file
+     has a continuation recorded for it: the word taken has none, because it
+     is the path you are already on, and neither has anything inside a branch,
+     which is where the recording stops and the model would have to start. */
+  const branchAt = (k, row) => {
+    const d = BRANCH[p.__q];
+    if(!d || p.__forks.length) return null;
+    const rows = d.at[String(k)];
+    if(!rows) return null;
+    const w = row.firstChild.nodeValue.trim();
+    return rows.find(r => r.w === w) || null;
+  };
+  const origAt = k => {
+    const b = p.__base;
+    return b && b[k] ? b[k].tok : null;
+  };
+
+  p.addEventListener("pointerover", e => {
+    const row = e.target.closest(".fan i");
+    if(!row || at < 0) return;
+    const k = at, br = branchAt(k, row);
+    if(br) showGhost(k, br);
+    else clearGhost();
+  });
+  p.addEventListener("pointerout", e => {
+    if(e.relatedTarget && p.contains(e.relatedTarget) &&
+       e.relatedTarget.closest(".fan")) return;
+    clearGhost();
+  });
+  p.addEventListener("click", e => {
+    const row = e.target.closest(".fan i");
+    if(!row || at < 0) return;
+    e.stopPropagation();
+    const k = at, br = branchAt(k, row);
+    if(br){ clearGhost(); takeFork(p, k, br); return; }
+    const back = row.firstChild.nodeValue.trim();
+    if(p.__forks.length && back === origAt(k)) { clearGhost(); unFork(p, k); }
+  }, true);
+
+  /* every row the file can actually follow says so, quietly */
+  const mark = () => {
+    const d = BRANCH[p.__q];
+    if(!d) return;
+    toks.forEach((t, k) => {
+      const can = !p.__forks.length && d.at[String(k)];
+      rowsOf(t).forEach(r => {
+        const w = r.firstChild.nodeValue.trim();
+        r.classList.toggle("go", !!(can && can.some(x => x.w === w)));
+        r.classList.toggle("back", !!(p.__forks.length && w === origAt(k)));
+      });
+    });
+  };
+  /* what a fork hands back: the new words, nothing measured, nothing lit */
+  p.__ins = () => {
+    toks = [...p.querySelectorAll(".tok")];
+    /* the words that survived a fork still carry whatever the lens last left
+       on them, and a paragraph half dimmed by a pointer that has gone is not
+       a paragraph anybody asked for */
+    toks.forEach(t => {
+      t.style.removeProperty("--lens");
+      t.style.removeProperty("--hide");
+      t.style.removeProperty("--push");
+      t.classList.remove("at", "up", "doomed");
+    });
+    boxes = null; at = -1; pinned = -1;
+    p.classList.remove("inspect");
+    p.classList.add("ready");
+    clearGhost(); mark();
+  };
+  if(BRANCH[p.__q]) mark(); else loadBranches(p.__q).then(mark);
+}
+
+/* Take the fork: everything the sentence said after that word goes, and the
+   other one writes itself in its place at twice the speed. The words before
+   the fork are untouched, so the paragraph above it does not move. */
+/* Everything from this word on, and the space that was holding it apart from
+   the one before, which the rewrite puts back itself. */
+function cutAfter(p, from){
+  while(p.lastChild && p.lastChild !== from) p.lastChild.remove();
+  from.remove();
+  while(p.lastChild && p.lastChild.nodeType === 3 && !p.lastChild.nodeValue.trim())
+    p.lastChild.remove();
+}
+
+async function takeFork(p, k, br){
+  const my = token;
+  const toks = [...p.querySelectorAll(".tok")];
+  const from = toks[k];
+  if(!from) return;
+  p.classList.remove("inspect", "ready");
+  cutAfter(p, from);
+  p.__forks = [{ at:k, w:br.w }];
+  const caret = el("span", "caret");
+  p.appendChild(caret);
+  p.classList.remove("done");
+  await writeWords(p, caret, br.reply, my, .55);
+  if(my !== token) return;
+  caret.remove();
+  p.classList.add("done");
+  [...p.querySelectorAll(".tok")].forEach((t, i) => {
+    t.classList.toggle("mine", i >= k);
+    t.style.setProperty("--depth", p.__forks.length - 1);
+  });
+  inspector(p);
+  scroll();
+}
+
+/* And back. The model's own word is still a row in that word's field, so
+   going back is the same gesture as going: no second idea to learn. */
+async function unFork(p, k){
+  const my = token;
+  const rest = p.__base.slice(k);
+  const toks = [...p.querySelectorAll(".tok")];
+  const from = toks[k];
+  if(!from || !rest.length) return;
+  p.classList.remove("inspect", "ready");
+  cutAfter(p, from);
+  p.__forks = [];
+  const caret = el("span", "caret");
+  p.appendChild(caret);
+  p.classList.remove("done");
+  await writeWords(p, caret, rest, my, .45);
+  if(my !== token) return;
+  caret.remove();
+  p.classList.add("done");
+  [...p.querySelectorAll(".tok")].forEach(t => t.classList.remove("mine"));
+  inspector(p);
+  scroll();
 }
 
 function actions(t){
