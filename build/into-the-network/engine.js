@@ -286,7 +286,9 @@ function fitStage(){
   RX=lerp(205,400,wide); RY=lerp(315,180,wide); RZ=lerp(128,146,wide);
   /* shallower than it was, because depth costs camera distance twice over:
      once to clear the near face and again to hold the turn */
-  CAM3=fitBox(RX,RY,RZ,ORBIT,32,1.05);
+  /* a little more air than the box strictly needs: the labels are drawn
+     centred on their nodes, so the outermost ones reach past the faces */
+  CAM3=fitBox(RX,RY,RZ,ORBIT,32,1.12);
   ENDR=fitCam(RX*.58,RY*.58,1.12,RZ*.58);
 }
 const LINE_Y=104, SCALE=1.05, PER=1600;
@@ -357,15 +359,27 @@ function buildCloud(){
   const fib=(i,n,rad)=>{const u=(i+.5)/n,ph=Math.acos(1-2*u),th=i*2.39996;
     return V3(Math.sin(ph)*Math.cos(th)*rad*RX,Math.cos(ph)*rad*RY,
               Math.sin(ph)*Math.sin(th)*rad*RZ);};
-  const LAYOUTS=[
+  /* Four readings, not one reading drawn four ways.
+     The recording used to carry a single two-dimensional projection, and
+     these four functions rearranged it under four different rules while the
+     captions called them dimensions 1-3, 4-6, 7-9 and 10-12. The views
+     differed; the numbers behind them did not, which made the caption the one
+     thing on the page that was not true.
+     capture-axes.py now decomposes the whole cloud once and writes each
+     word's position on principal components 1 through 12, so each view reads
+     three components nobody has read yet. Where a word sits, and what it sits
+     near, changes with the slice, because that is what a slice is.
+     The fallbacks below are for a question typed in the browser, where the
+     embedding matrix is out of reach and there is nothing to project. */
+  const AX=G.axes||null;
+  const onAxes=t=>r=>{ const a=AX&&AX[r.w]; return a
+    ? V3(a[t*3]*RX, a[t*3+1]*RY, a[t*3+2]*RZ) : null; };
+  const GUESS=[
     r=>{ if(r.role===2) return fib(r.ord,r.ordN,.99);
       const c=fib(r.parent,NQ,.52);
       if(r.role===0) return c;
       const R=22+(1-r.rel)*38, th=ang(r);
       return V3(c.x+Math.cos(th)*R*.75,c.y+Math.sin(th)*R*.95,c.z+r.h3[2]*2.6*R); },
-    /* the question's own words used to sit at radius .10, which on any small
-       stage is six words in the same spot. Far enough out to be told apart,
-       still nearer the middle than anything they attracted. */
     r=>{ const rad=(r.role===0?.34:(1-r.rel))*.97, th=ang(r);
       const ph=Math.acos(cl(r.h3[2]*2,-1,1));
       return V3(Math.sin(ph)*Math.cos(th)*rad*RX,Math.cos(ph)*rad*RY,
@@ -376,17 +390,25 @@ function buildCloud(){
                 Math.sin(th)*rad*RZ); },
     r=>fib(r.ord,r.ordN,[.24,.64,.98][r.role])
   ];
+  const LAYOUTS=GUESS.map((g,t)=>{ const real=onAxes(t);
+    return r=>real(r)||g(r); });
   const K=LAYOUTS.length;
   lay=recs.map(r=>LAYOUTS.map(f=>f(r)));
   const pc=(a,q)=>{const b=a.slice().sort((x,y)=>x-y);
     return b[Math.min(b.length-1,Math.floor(b.length*q))]||1;};
   for(let k=0;k<K;k++){
     const live=lay.filter((L,j)=>recs[j].vis[k]).map(L=>L[k]);
-    const f=[RX*.98/pc(live.map(v=>Math.abs(v.x)),.88),
-             RY*.98/pc(live.map(v=>Math.abs(v.y)),.88),
-             RZ*.98/pc(live.map(v=>Math.abs(v.z)),.88)];
-    lay.forEach(L=>L[k].set(cl(L[k].x*f[0],-RX,RX),cl(L[k].y*f[1],-RY,RY),
-                            cl(L[k].z*f[2],-RZ,RZ)));
+    /* Inside the faces, not on them. A word's label is drawn centred on its
+       node, so a node sitting exactly on the bottom face has half its label
+       hanging below the box and off the frame. Real projections have longer
+       tails than the old hand-made arrangements did, which is what made this
+       show up. */
+    const f=[RX*.90/pc(live.map(v=>Math.abs(v.x)),.88),
+             RY*.86/pc(live.map(v=>Math.abs(v.y)),.88),
+             RZ*.90/pc(live.map(v=>Math.abs(v.z)),.88)];
+    lay.forEach(L=>L[k].set(cl(L[k].x*f[0],-RX*.97,RX*.97),
+                            cl(L[k].y*f[1],-RY*.93,RY*.93),
+                            cl(L[k].z*f[2],-RZ*.97,RZ*.97)));
   }
   /* step-2 home: each word in its seat, its neighbourhood around it in depth */
   recs.forEach(r=>{
@@ -582,12 +604,23 @@ async function play(data){
      slice of the space the words are held in, and what falls near what
      changes with the slice. That is the whole method: meaning is a position
      in a space with far more directions than a screen has. */
-  const NAMES=[
-    "associating in dimensions 1-3 of 960",
-    "dimensions 4-6: other words fall together",
-    "dimensions 7-9: finer distinctions",
-    "dimensions 10-12: the last with signal",
-  ];
+  /* The share each view carries is measured, not asserted: the first three
+     components hold several times what the next three do, and by the tenth
+     there is almost nothing left to tell words apart by. Saying so is what
+     makes the fourth view worth watching rather than a repeat. */
+  const pct=v=>(v*100).toFixed(v<.1?1:0)+"%";
+  const VAR=G.var||null;
+  const NAMES=(VAR?[
+    "principal components 1 to 3 of 960, holding "+pct(VAR[0])+" of the difference",
+    "components 4 to 6, another "+pct(VAR[1])+": other words fall together",
+    "components 7 to 9, "+pct(VAR[2])+": finer distinctions",
+    "components 10 to 12, "+pct(VAR[3])+": the last with any signal",
+  ]:[
+    "associating across the model's 960 dimensions",
+    "another slice: other words fall together",
+    "finer distinctions",
+    "the last directions with signal",
+  ]);
   const MOVE=950, WIRE_T=1500, REST=340;
   /* How long one connection takes to flare and settle. It has to be short
      next to the spread of start times below, or the band of lit edges is as

@@ -67,7 +67,11 @@ Stated on the pages themselves, because the distinction is the point.
 distribution over all 49,152 tokens rather than a shortlist. The neighbourhoods
 in recorded questions, which are nearest neighbours in the actual embedding
 matrix, sampled one per direction so the whole neighbourhood shows rather than
-its densest side. The surprisal figures. The leave-one-out word weights.
+its densest side. The four sets of axes in step three, which are principal
+components 1-3, 4-6, 7-9 and 10-12 of the whole cloud's embeddings, with the
+share of the variance each one carries printed in its own caption. The
+branches, which are real continuations from a forced token. The surprisal
+figures. The leave-one-out word weights.
 
 **Staging:** the box, the collapse into the cursor, the spreading front. These
 are devices for legibility and are named as such on the page.
@@ -75,7 +79,9 @@ are devices for legibility and are named as such on the page.
 ### Building it
 
 ```
-python build/capture-seeds.py --model <path to a local SmolLM2 export> "Your question?"
+python build/capture-seeds.py    --model <a local SmolLM2 export> "Your question?"
+python build/capture-axes.py     --model <a local SmolLM2 export>
+python build/capture-branches.py --model <a local SmolLM2 export>
 python build/build-into-the-network.py
 ```
 
@@ -83,6 +89,11 @@ python build/build-into-the-network.py
 model, reading the ONNX export and the tokenizer from disk so nothing is
 downloaded. It pulls the embedding matrix straight out of the ONNX graph as an
 initializer, so no PyTorch checkpoint is needed either.
+`capture-axes.py` decomposes the whole cloud once and writes each word's
+position on principal components 1 through 12, which is what step three's four
+views read. `capture-branches.py` forces each of the likeliest words the model
+did not use into its place and lets the model carry on, which is what makes the
+finished answer forkable without a download.
 `build-into-the-network.py` inlines the sources into the published page.
 
 ### Built with
