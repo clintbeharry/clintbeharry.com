@@ -283,19 +283,24 @@ function buildTok(step){
   word.textContent = step.tok;
   tok.appendChild(word);
 
-  const field = step.cands.slice(0, FAN_N);
-  /* Which row was taken is a question of identity, not of position. It is
-     almost always the likeliest one, but when it is not, that is the most
-     interesting thing on the line and the field has to be able to say so:
-     the list stays in rank order and the highlight moves down it. */
+  /* Rank order, by share, every time. The recording puts the word that was
+     taken first and the rest behind it, and the decoding was not greedy, so
+     in about one step in six the word taken is NOT the likeliest one and the
+     list was opening with a 0.8% word above an 8.8% one. Which row was taken
+     is a question of identity, not of position: the list is sorted and the
+     highlight moves down it. */
+  const ranked = step.cands.slice().sort((a, b) => b.p - a.p);
+  const field = ranked.slice(0, FAN_N);
   let wi = field.findIndex(c => c.w === step.tok);
   if(wi < 0){
-    const taken = step.cands.find(c => c.w === step.tok);
-    /* taken but not in the top few: it belongs at the bottom of the list,
-       which is where its share puts it anyway */
-    if(taken){ field[field.length - 1] = taken; wi = field.length - 1; }
+    /* Taken from further down than the field reaches. Rather than quietly
+       dropping a row to make space, it is added below the others, so a word
+       the model reached a long way for is visibly a long way down. */
+    const taken = ranked.find(c => c.w === step.tok);
+    if(taken){ field.push(taken); wi = field.length - 1; }
     else wi = 0;
   }
+  const far = wi >= FAN_N;
   const clip = w => w.length > MAX_CH ? w.slice(0, MAX_CH - 1) + "\u2026" : w;
   /* the line spaces itself so every field has somewhere to sit, plus a little
      over, because words butted together read as one word */
@@ -362,17 +367,18 @@ function buildTok(step){
     row.style.setProperty("--x", (Math.cos(a) * R).toFixed(1) + "px");
     row.style.setProperty("--y", (-Math.sin(a) * R).toFixed(1) + "px");
     if(i === wi) row.classList.add("win");
+    if(far && i === wi) row.classList.add("far");
     fan.appendChild(row);
   });
   tok.appendChild(fan);
-  return { tok, fan, word, wi, took:field[wi] };
+  return { tok, fan, word, wi, field, took:field[wi] };
 }
 
 /* One line from the word to each thing it might have been. Drawn after the
    token is in the document, because where the rows land depends on how wide
    their own text is, and that is only known once laid out. */
 const NS = "http://www.w3.org/2000/svg";
-function wires(tok, fan, step, wi){
+function wires(tok, fan, field, wi){
   const tb = tok.getBoundingClientRect();
   const rows = [...fan.children];
   if(!rows.length || !tb.width) return null;
@@ -387,7 +393,7 @@ function wires(tok, fan, step, wi){
     const ln = document.createElementNS(NS, "line");
     ln.setAttribute("x1", ox.toFixed(1)); ln.setAttribute("y1", oy.toFixed(1));
     ln.setAttribute("x2", (x - 3).toFixed(1)); ln.setAttribute("y2", y.toFixed(1));
-    const p = step.cands[i] ? step.cands[i].p : 0;
+    const p = field[i] ? field[i].p : 0;
     ln.setAttribute("stroke", i === wi ? "#d97757" : "#8a8a8a");
     /* the likelier the candidate, the heavier the line to it */
     ln.setAttribute("stroke-width", (0.5 + Math.sqrt(p) * 2.1).toFixed(2));
@@ -412,7 +418,7 @@ async function writeReply(bot, G, my, at){
 
   for(const step of G.reply){
     if(my !== token) return;
-    const { tok, fan, wi, took } = buildTok(step);
+    const { tok, fan, wi, took, field } = buildTok(step);
     /* A real space between words, not just the padding that holds a field
        open. Padding alone spaces the line while it is being written and then
        has nothing to relax to, so the finished answer keeps animation gaps
@@ -422,7 +428,7 @@ async function writeReply(bot, G, my, at){
     p.insertBefore(tok, caret);
     scroll();
 
-    const w = wires(tok, fan, step, wi);
+    const w = wires(tok, fan, field, wi);
     fan.classList.add("in");
     if(w) w.classList.add("in");
     await pause(80);

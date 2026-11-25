@@ -235,8 +235,12 @@ body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
   transition:opacity .2s ease;
   background:none;box-shadow:none;border-radius:0;
   justify-content:space-between;gap:18px;white-space:nowrap}
-/* five is the readable length of a field. The tail is a row of 0.01%s. */
-.reply.done.inspect .fan i:nth-child(n+6){display:none}
+/* Five is the readable length of a field. The tail is a row of 0.01%s, and
+   the one exception is a word taken from below the fifth: that row is the
+   point of the panel it appears in, so it is kept and set apart. */
+.reply.done.inspect .fan i:nth-child(n+6):not(.far){display:none}
+.reply.done.inspect .tok.at .fan i.far{margin-top:5px;padding-top:6px;
+  border-top:1px solid #ffffff1f}
 
 /* the share it was taken at, rising away above the line */
 .lift{position:absolute;left:50%;top:-2px;transform:translateX(-50%);
