@@ -15,6 +15,12 @@
 --------------------------------------------------------------------------- */
 :root{
   --page:#191919; --raised:#303030;
+  /* One panel, wherever a set of choices is offered: the words a sentence
+     could have taken, the questions you could ask, the one decision the page
+     puts to you. Same surface, same rule, same shadow, so a list of choices
+     is recognisable as one before it is read. */
+  --panel:#1f1f1f; --panel-line:#ffffff1c;
+  --panel-lift:0 14px 34px #000000a8, 0 2px 6px #00000080;
   --ink:#ffffffed; --dim:#ffffff91; --dimmer:#ffffff66;
   --rule:#ffffff0a; --rule-2:#ffffff14;
   --clay:#d97757; --clay-hot:#c6613f;
@@ -222,8 +228,8 @@ body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
   transform:translateX(calc(-50% + var(--nudge,0px)));
   display:flex;flex-direction:column;gap:3px;
   padding:8px 11px;border-radius:10px;
-  background:#1f1f1f;border:1px solid #ffffff1c;
-  box-shadow:0 14px 34px #000000a8,0 2px 6px #00000080;z-index:6}
+  background:var(--panel);border:1px solid var(--panel-line);
+  box-shadow:var(--panel-lift);z-index:6}
 /* above the word instead, when there is no room under it */
 .reply.done.inspect .tok.at.up .fan{top:auto;bottom:calc(100% + 7px)}
 .reply.done.inspect .tok.at .fan i{
@@ -240,7 +246,7 @@ body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
    point of the panel it appears in, so it is kept and set apart. */
 .reply.done.inspect .fan i:nth-child(n+6):not(.far){display:none}
 .reply.done.inspect .tok.at .fan i.far{margin-top:5px;padding-top:6px;
-  border-top:1px solid #ffffff1f}
+  border-top:1px solid var(--panel-line)}
 
 /* the share it was taken at, rising away above the line */
 .lift{position:absolute;left:50%;top:-2px;transform:translateX(-50%);
@@ -252,8 +258,15 @@ body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
   14%{opacity:.95;transform:translate(-50%,-6px)}
   100%{opacity:0;transform:translate(-50%,-34px)}
 }
+/* Between words it is an ordinary text cursor at the end of the line. While
+   a field is open it moves to the foot of the word being decided, which is
+   where the lines to the candidates all start: the cursor is the thing doing
+   the picking, so it belongs at the point they are picked from, not trailing
+   a word that has not been chosen yet. */
 .caret{display:inline-block;width:2px;height:1.05em;vertical-align:-.16em;
   background:var(--clay);border-radius:1px;animation:blink 1.15s steps(1,end) infinite}
+.tok > .caret{position:absolute;left:50%;bottom:0;transform:translateX(-50%);
+  height:1.15em;vertical-align:baseline}
 @keyframes blink{0%,45%{opacity:1}46%,100%{opacity:0}}
 
 /* message actions, the way a chat shows copy and retry */
@@ -264,8 +277,10 @@ body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
 .acts button:disabled{opacity:.35;cursor:default}
 
 /* the one thing the page does ask, before spending someone's bandwidth */
-.gate{border:1px solid var(--rule-2);border-radius:12px;padding:14px 16px;
-  background:#1f1f1f;max-width:62ch}
+.gate{border:1px solid var(--panel-line);border-radius:12px;padding:14px 16px;
+  background:var(--panel);box-shadow:var(--panel-lift);max-width:58ch}
+/* the same panel, folded into the sheet rather than the thread */
+.sheet .gate{max-width:none;box-shadow:none;border:0;background:none;padding:10px 11px}
 .gate p{margin:0 0 12px;color:var(--dim);font-size:14px}
 .gate b{color:var(--ink);font-weight:600}
 .gate .row{display:flex;gap:8px;flex-wrap:wrap}
@@ -278,17 +293,31 @@ body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
 
 footer{flex:0 0 auto;padding:6px 20px 20px;background:var(--page)}
 .bar{max-width:var(--col);margin:0 auto}
-/* Out of the way until asked for. They are a prompt, not furniture, and on a
-   phone they were taking up most of the screen before anything had happened. */
-.chips{display:flex;gap:7px;flex-wrap:wrap;margin:0;padding:0;list-style:none;
-  max-height:0;opacity:0;overflow:hidden;
-  transition:max-height .32s cubic-bezier(.3,0,.2,1),opacity .24s ease,
-             margin .32s cubic-bezier(.3,0,.2,1)}
-.bar.open .chips{max-height:40vh;opacity:1;margin:0 0 11px}
-.chip{font:inherit;font-size:12.5px;color:var(--dim);background:transparent;
-  border:1px solid var(--rule-2);border-radius:999px;padding:6px 13px;cursor:pointer;
-  transition:background .15s ease,color .15s ease}
-.chip:hover{color:var(--ink);background:#ffffff0f}
+/* Out of the way until asked for: a prompt, not furniture. It opens upward
+   out of the box, the same panel the words open into, because it is the same
+   kind of thing, a set of choices with what each one costs beside it. */
+.sheet{max-height:0;opacity:0;overflow:hidden;margin:0;
+  transition:max-height .34s cubic-bezier(.3,0,.2,1),opacity .22s ease,
+             margin .34s cubic-bezier(.3,0,.2,1)}
+.bar.open .sheet{max-height:min(62vh,520px);opacity:1;margin:0 0 9px}
+.sheet .inner{background:var(--panel);border:1px solid var(--panel-line);
+  border-radius:14px;box-shadow:var(--panel-lift);padding:6px;
+  display:flex;flex-direction:column;gap:1px}
+.asks{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:1px}
+.ask{display:flex;width:100%;align-items:baseline;gap:14px;text-align:left;
+  font:inherit;font-size:14px;color:var(--dim);background:none;border:0;
+  padding:9px 11px;border-radius:9px;cursor:pointer;
+  transition:background .14s ease,color .14s ease}
+.ask:hover,.ask:focus-visible{background:#ffffff0f;color:var(--ink)}
+.ask span{flex:1;min-width:0}
+.ask em{font-style:normal;font-family:var(--mono);font-size:10.5px;
+  color:var(--dimmer);white-space:nowrap}
+/* the one row that costs something, set apart the way a word reached far for
+   is set apart in a field */
+.own{margin-top:5px;padding-top:11px;border-top:1px solid var(--panel-line);
+  border-radius:0 0 9px 9px;align-items:center}
+.own svg{width:14px;height:14px;flex:0 0 auto;color:var(--clay)}
+.own span{color:var(--ink)}
 .composer{background:var(--raised);border-radius:16px;padding:8px;
   border:1px solid var(--rule-2)}
 /* The box holds one line, so the button belongs on that line's middle.
@@ -325,7 +354,18 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--clay);outline-o
 <main id="thread"><div class="inner" id="log"></div></main>
 
 <footer><div class="bar">
-  <ul class="chips" id="chips"></ul>
+  <div class="sheet" id="sheet"><div class="inner">
+    <ul class="asks" id="chips"></ul>
+    <button class="ask own" id="own">
+      <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="M8 2.5v8M8 10.5 4.6 7.2M8 10.5 11.4 7.2M3 13.5h10"
+              stroke="currentColor" stroke-width="1.6"
+              stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span>Type anything you want</span>
+      <em id="ownsize"></em>
+    </button>
+  </div></div>
   <div class="composer">
     <div class="line">
       <input id="msg" type="text" autocomplete="off" spellcheck="false"

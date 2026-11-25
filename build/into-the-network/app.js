@@ -79,25 +79,30 @@ function say(t, text, cls){
 }
 
 /* ---- the one question the page asks ---- */
-function gate(t, text){
+function gate(t, text, quiet){
   return new Promise(resolve => {
     const g = document.createElement("div");
     g.className = "gate";
     g.innerHTML =
-      "<p>Answering your own question means running the model itself, right here "
-      + "in this tab. That needs its weights: <b>about " + MB + " MB</b>, downloaded "
-      + "once and kept by your browser afterwards. Nothing you type is sent "
-      + "anywhere.</p><div class='row'></div>";
+      "<p>The five questions here are recorded. Anything else runs the model "
+      + "itself, in this tab: <b>" + MB + " MB</b>, once, then your browser keeps "
+      + "it. Nothing you type leaves the page.</p><div class='row'></div>";
     const row = g.querySelector(".row");
     const go = document.createElement("button");
-    go.className = "go"; go.textContent = "Download and answer";
+    go.className = "go"; go.textContent = "Get the model";
     const no = document.createElement("button");
     no.textContent = "Not now";
     row.append(go, no);
     t.appendChild(g); scroll();
     go.onclick = () => { g.remove(); okToLoad = true; resolve(true); };
-    no.onclick = () => { g.remove(); say(t, "Left it. The suggested questions "
-      + "below are already answered and need no download."); resolve(false); };
+    no.onclick = () => {
+      g.remove();
+      /* in the sheet the list comes straight back, which says it better than
+         a sentence would */
+      if(!quiet) say(t, "Left it. The suggested questions below are already "
+        + "answered and need no download.");
+      resolve(false);
+    };
   });
 }
 
@@ -426,6 +431,9 @@ async function writeReply(bot, G, my, at){
     if(p.querySelector(".tok") && !/^[,.;:!?)\]'’]/.test(step.tok))
       p.insertBefore(document.createTextNode(" "), caret);
     p.insertBefore(tok, caret);
+    /* into the word while its field is open, so the cursor sits at the point
+       all the lines to the candidates start from */
+    tok.appendChild(caret);
     scroll();
 
     const w = wires(tok, fan, field, wi);
@@ -463,6 +471,7 @@ async function writeReply(bot, G, my, at){
     await pause(300);
     if(my !== token) return;
     tok.classList.add("set");
+    p.appendChild(caret);          /* and back to the end of the line */
     await pause(40);
     fan.classList.remove("in", "out");
     fan.classList.add("rest");
@@ -667,37 +676,67 @@ function actions(t){
   t.appendChild(a);
 }
 
-/* ---- composer ---- */
+/* ---- composer ----
+   The sheet is the same panel the words open into, and reads the same way:
+   a choice on the left, what it costs on the right. The recorded questions
+   cost nothing, so they say nothing; the one that costs a download says so
+   in the only unit that matters. */
 function chips(){
   const all = RECORDED.map(g => g.prompt)
     .concat(SUGGEST.filter(s => !findSeed(s)));
   all.forEach(text => {
     const li = document.createElement("li");
     const b = document.createElement("button");
-    b.className = "chip"; b.textContent = text;
-    b.onclick = () => { openChips(false); chipHold = false; $("msg").blur(); ask(text); };
+    b.className = "ask";
+    const sp = document.createElement("span"); sp.textContent = text;
+    b.appendChild(sp);
+    b.onclick = () => { closeSheet(); $("msg").blur(); ask(text); };
     li.appendChild(b); $("chips").appendChild(li);
   });
+  $("ownsize").textContent = MB + " MB";
+  $("own").onclick = () => {
+    if(okToLoad){ closeSheet(); $("msg").focus(); return; }
+    offer();
+  };
+}
+
+/* The one decision the page puts to anybody, asked where it comes up rather
+   than after they have typed something and had it refused. */
+async function offer(){
+  const sheet = $("sheet").firstElementChild;
+  const keep = [...sheet.children];
+  keep.forEach(c => { c.style.display = "none"; });
+  const yes = await gate(sheet, "", true);
+  keep.forEach(c => { c.style.display = ""; });
+  if(yes){
+    closeSheet();
+    $("msg").placeholder = "Ask anything. The model loads when you send.";
+    $("msg").focus();
+  }
 }
 function submit(){
   const v = $("msg").value.trim();
   if(!v) return;
   $("msg").value = ""; $("send").disabled = true;
-  openChips(false); $("msg").blur();
+  closeSheet(); $("msg").blur();
   ask(v);
 }
-/* The suggestions are shown when somebody reaches for the box, not before.
-   A chip press has to survive the blur that the press itself causes, so a
-   pointer going down on the list holds them open until the click lands. */
+/* The sheet is shown when somebody reaches for the box, not before. A press
+   inside it has to survive the blur that the press itself causes, so a
+   pointer going down on the sheet holds it open until the click lands. */
 const bar = document.querySelector(".bar");
 const openChips = v => bar.classList.toggle("open", v);
+const closeSheet = () => { openChips(false); chipHold = false; };
 let chipHold = false;
-$("chips").addEventListener("pointerdown", () => { chipHold = true; });
+$("sheet").addEventListener("pointerdown", () => { chipHold = true; });
 $("msg").addEventListener("focus", () => openChips(true));
 $("msg").addEventListener("blur", () => setTimeout(() => {
   if(!chipHold) openChips(false);
   chipHold = false;
 }, 60));
+addEventListener("pointerdown", e => {
+  if(!bar.contains(e.target)) closeSheet();
+}, true);
 
 $("msg").addEventListener("keydown", e => { if(e.key === "Enter") submit(); });
 $("msg").addEventListener("input", () => { $("send").disabled = !$("msg").value.trim(); });
