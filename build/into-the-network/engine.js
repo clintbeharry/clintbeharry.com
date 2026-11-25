@@ -311,7 +311,12 @@ function buildCloud(){
      that shrinks to fit is not a fix, it is the same problem written smaller,
      so the cloud thins out instead and what is left can be read. */
   const DENSE=cl((VW-330)/(880-330));
-  const POOL=Math.round(lerp(15,48,DENSE)), KIDS=Math.round(lerp(5,13,DENSE));
+  /* Every neighbour that was recorded, at every size. Thinning them on a
+     narrow screen was meant to keep the labels apart and instead made the
+     step look like the model had found a handful of associations rather than
+     a neighbourhood. They are drawn with transparency and they read through
+     each other, so a crowd is the better failure. */
+  const POOL=Math.round(lerp(22,48,DENSE)), KIDS=99;
   recs=[];
   G.q.forEach((d,i)=>recs.push({w:d.w,role:0,parent:i,xy:null,rel:1,h3:hash3(d.w)}));
   /* A recorded neighbourhood is one word per direction, listed in order
@@ -381,8 +386,11 @@ function buildCloud(){
     if(r.role===0){ const t=seat(r.parent); r.p2=V3(t.x,t.y,0); return; }
     if(r.role===2){ r.p2=null; return; }
     const a=seat(r.parent);
+    /* a tall stage has room above and below a word that it does not have
+       beside it, so the neighbourhood is drawn out the way the space runs */
+    const tall=cl((1.5-VW/VH)/.9), up=lerp(1.45,2.25,tall);
     const R=36+(1-r.rel)*30, th=ang(r);
-    r.p2=V3(a.x+Math.cos(th)*R, a.y+Math.sin(th)*R*1.45, (r.rel-.45)*200);
+    r.p2=V3(a.x+Math.cos(th)*R, a.y+Math.sin(th)*R*up, (r.rel-.45)*200);
   });
   nodes=recs.map((r,j)=>{
     const st=r.p2||lay[j][0];
