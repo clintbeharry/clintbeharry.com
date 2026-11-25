@@ -212,9 +212,26 @@ body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
   opacity:calc(.52 + var(--o,.35) * .48);
   background:#1d1d1d;box-shadow:0 0 0 5px #1d1d1d;border-radius:3px}
 .reply.done.inspect .fan i.win{opacity:1}
-/* four, not six. The tail of a field is a row of 0.01%s, and six rows reached
-   two lines down the paragraph. */
-.reply.done.inspect .fan i:nth-child(n+5){opacity:0}
+/* A panel, not a stack of floating rows. Hanging the rows over the paragraph
+   at their animation spacing left them nearly touching each other and mixed
+   in with whatever words were on the line below, so two things were being
+   read at once and neither of them cleanly. Opaque, raised, and spaced like
+   something meant to be read: what is behind it is simply behind it. */
+.reply.done.inspect .tok.at .fan{
+  width:max-content;height:auto;top:calc(100% + 5px);
+  transform:translateX(calc(-50% + var(--nudge,0px)));
+  display:flex;flex-direction:column;gap:3px;
+  padding:8px 11px;border-radius:10px;
+  background:#1f1f1f;border:1px solid #ffffff1c;
+  box-shadow:0 14px 34px #000000a8,0 2px 6px #00000080;z-index:6}
+/* above the word instead, when there is no room under it */
+.reply.done.inspect .tok.at.up .fan{top:auto;bottom:calc(100% + 7px)}
+.reply.done.inspect .tok.at .fan i{
+  position:static;transform:none;height:auto;line-height:17px;
+  background:none;box-shadow:none;border-radius:0;
+  justify-content:space-between;gap:18px;white-space:nowrap}
+/* five is the readable length of a field. The tail is a row of 0.01%s. */
+.reply.done.inspect .fan i:nth-child(n+6){display:none}
 
 /* the share it was taken at, rising away above the line */
 .lift{position:absolute;left:50%;top:-2px;transform:translateX(-50%);
@@ -273,7 +290,12 @@ footer{flex:0 0 auto;padding:6px 20px 20px;background:var(--page)}
   font-size:15px;line-height:21px;padding:7px 0}
 #msg:focus{outline:none}
 #msg::placeholder{color:var(--dimmer)}
+/* The input is taller than the button, so the composer's own 8px of padding
+   leaves more room above and below the arrow than beside it. The difference
+   is made up on the right, so the arrow sits the same distance from all three
+   edges it is near. */
 #send{flex:0 0 auto;width:28px;height:28px;border-radius:8px;border:0;cursor:pointer;
+  margin-right:calc((21px + 14px - 28px) / 2);
   background:var(--clay);color:#fff;display:grid;place-items:center;
   transition:background .15s ease}
 #send:hover:not(:disabled){background:var(--clay-hot)}

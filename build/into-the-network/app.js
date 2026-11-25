@@ -532,8 +532,33 @@ function inspector(p){
          and reading one is the whole point of stopping on a word. */
       t.style.setProperty("--mag", d === 0 ? 1 : 0);
       t.classList.toggle("at", d === 0);
+      if(d !== 0) t.classList.remove("up");
     });
     p.classList.toggle("inspect", idx >= 0);
+    if(idx >= 0) place(toks[idx]);
+  };
+
+  /* The panel hangs under its word, unless that would put it off the bottom
+     of the thread, and it is centred on the word, unless that would put it
+     past the edge of the column. Both are read from the laid-out panel rather
+     than guessed from the word's position, because how big it is depends on
+     how long the words inside it are. */
+  const place = t => {
+    const fan = t.querySelector(".fan");
+    if(!fan) return;
+    fan.style.setProperty("--nudge", "0px");
+    t.classList.remove("up");
+    requestAnimationFrame(() => {
+      if(!t.classList.contains("at")) return;
+      const view = document.getElementById("thread").getBoundingClientRect();
+      let r = fan.getBoundingClientRect();
+      if(r.bottom > view.bottom - 10 && r.height < t.getBoundingClientRect().top - view.top)
+        t.classList.add("up");
+      r = fan.getBoundingClientRect();
+      const over = Math.max(0, r.right - (view.right - 12))
+                 - Math.max(0, (view.left + 12) - r.left);
+      if(over) fan.style.setProperty("--nudge", (-over).toFixed(1) + "px");
+    });
   };
 
   /* Which word the pointer is on. A word owns the full height of its line and
@@ -558,7 +583,20 @@ function inspector(p){
   /* Hovering follows the pointer. A click holds a word still so its field can
      actually be read, because a field that vanishes the moment you look away
      from the word cannot be read at all. Clicking it again lets go. */
-  const hover = (x, y) => { if(pinned < 0) apply(hit(x, y)); };
+  /* The panel hangs over whatever is below the word, so a pointer moving down
+     into it to read it would otherwise land on the words behind and take the
+     panel away mid-sentence. Inside its own panel, nothing changes. */
+  const inPanel = () => {
+    if(at < 0) return null;
+    const f = toks[at].querySelector(".fan");
+    return f ? f.getBoundingClientRect() : null;
+  };
+  const hover = (x, y) => {
+    if(pinned >= 0) return;
+    const r = inPanel();
+    if(r && x >= r.left - 6 && x <= r.right + 6 && y >= r.top - 4 && y <= r.bottom + 6) return;
+    apply(hit(x, y));
+  };
   const pin = (x, y) => {
     const i = hit(x, y);
     pinned = (i < 0 || i === pinned) ? -1 : i;
