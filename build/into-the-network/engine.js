@@ -475,11 +475,14 @@ async function play(data){
   /* ---------- 2 · each word inside its neighbourhood ---------- */
   $("step").textContent="2 / 5";
   hud("looking up each token's embedding");
-  /* the ten closest show here; the rest of each neighbourhood joins the cloud */
+  /* The whole neighbourhood, not the ten closest. This was the second cap on
+     the same thing: the recorded set was being thinned to fit a narrow screen
+     and then thinned again here, so a phone was showing six of thirteen. A
+     neighbourhood with its far side cut off is a direction, not a
+     neighbourhood. */
   const shown=new Map();
   G.q.forEach((d,i)=>{
-    const ks=kids.filter(r=>r.parent===i).sort((a,b)=>b.rel-a.rel).slice(0,10);
-    ks.forEach(r=>{ shown.set(r,1);
+    kids.filter(r=>r.parent===i).forEach(r=>{ shown.set(r,1);
       const e=mkEdge(words[i],r.n,GREY,0,r.rel); r.e2=e; });
   });
   const STEP=230;
