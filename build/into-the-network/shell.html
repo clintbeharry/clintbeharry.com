@@ -227,7 +227,12 @@ body{color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55;
 /* above the word instead, when there is no room under it */
 .reply.done.inspect .tok.at.up .fan{top:auto;bottom:calc(100% + 7px)}
 .reply.done.inspect .tok.at .fan i{
+  /* No transition on the way into the panel. A row carries the transform it
+     was left at in the trace, and animating from that to its place in the
+     list made the top and bottom rows, the two with the furthest to travel,
+     slide in while the middle ones barely moved. A panel appears. */
   position:static;transform:none;height:auto;line-height:17px;
+  transition:opacity .2s ease;
   background:none;box-shadow:none;border-radius:0;
   justify-content:space-between;gap:18px;white-space:nowrap}
 /* five is the readable length of a field. The tail is a row of 0.01%s. */

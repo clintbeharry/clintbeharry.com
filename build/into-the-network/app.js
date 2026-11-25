@@ -284,6 +284,18 @@ function buildTok(step){
   tok.appendChild(word);
 
   const field = step.cands.slice(0, FAN_N);
+  /* Which row was taken is a question of identity, not of position. It is
+     almost always the likeliest one, but when it is not, that is the most
+     interesting thing on the line and the field has to be able to say so:
+     the list stays in rank order and the highlight moves down it. */
+  let wi = field.findIndex(c => c.w === step.tok);
+  if(wi < 0){
+    const taken = step.cands.find(c => c.w === step.tok);
+    /* taken but not in the top few: it belongs at the bottom of the list,
+       which is where its share puts it anyway */
+    if(taken){ field[field.length - 1] = taken; wi = field.length - 1; }
+    else wi = 0;
+  }
   const clip = w => w.length > MAX_CH ? w.slice(0, MAX_CH - 1) + "\u2026" : w;
   /* the line spaces itself so every field has somewhere to sit, plus a little
      over, because words butted together read as one word */
@@ -349,18 +361,18 @@ function buildTok(step){
     row.style.setProperty("--cx", "0%");       /* reach out to the right */
     row.style.setProperty("--x", (Math.cos(a) * R).toFixed(1) + "px");
     row.style.setProperty("--y", (-Math.sin(a) * R).toFixed(1) + "px");
-    if(i === 0) row.classList.add("win");
+    if(i === wi) row.classList.add("win");
     fan.appendChild(row);
   });
   tok.appendChild(fan);
-  return { tok, fan, word };
+  return { tok, fan, word, wi, took:field[wi] };
 }
 
 /* One line from the word to each thing it might have been. Drawn after the
    token is in the document, because where the rows land depends on how wide
    their own text is, and that is only known once laid out. */
 const NS = "http://www.w3.org/2000/svg";
-function wires(tok, fan, step){
+function wires(tok, fan, step, wi){
   const tb = tok.getBoundingClientRect();
   const rows = [...fan.children];
   if(!rows.length || !tb.width) return null;
@@ -376,7 +388,7 @@ function wires(tok, fan, step){
     ln.setAttribute("x1", ox.toFixed(1)); ln.setAttribute("y1", oy.toFixed(1));
     ln.setAttribute("x2", (x - 3).toFixed(1)); ln.setAttribute("y2", y.toFixed(1));
     const p = step.cands[i] ? step.cands[i].p : 0;
-    ln.setAttribute("stroke", i === 0 ? "#d97757" : "#8a8a8a");
+    ln.setAttribute("stroke", i === wi ? "#d97757" : "#8a8a8a");
     /* the likelier the candidate, the heavier the line to it */
     ln.setAttribute("stroke-width", (0.5 + Math.sqrt(p) * 2.1).toFixed(2));
     ln.setAttribute("stroke-opacity", (0.2 + Math.sqrt(p) * 0.68).toFixed(2));
@@ -400,7 +412,7 @@ async function writeReply(bot, G, my, at){
 
   for(const step of G.reply){
     if(my !== token) return;
-    const { tok, fan } = buildTok(step);
+    const { tok, fan, wi, took } = buildTok(step);
     /* A real space between words, not just the padding that holds a field
        open. Padding alone spaces the line while it is being written and then
        has nothing to relax to, so the finished answer keeps animation gaps
@@ -410,27 +422,25 @@ async function writeReply(bot, G, my, at){
     p.insertBefore(tok, caret);
     scroll();
 
-    const w = wires(tok, fan, step);
+    const w = wires(tok, fan, step, wi);
     fan.classList.add("in");
     if(w) w.classList.add("in");
     await pause(80);
     if(my !== token) return;
-    await pause(Math.min(680, Math.max(70, bitsOf(step.cands[0].p) * 155)));
+    await pause(Math.min(680, Math.max(70, bitsOf(took.p) * 155)));
     if(my !== token) return;
 
     /* the one taken travels up and left onto the line; the rest slide left
-       and down into the trace they leave behind */
+       and down into the trace they leave behind, keeping their rank order so
+       the trace reads the same way the panel will */
     const rows = [...fan.children];
-    const win = rows[0];
-    win.style.setProperty("--cx", "-50%");
-    win.style.setProperty("--x", "0px");
-    win.style.setProperty("--y", (-(tok.offsetHeight - 2)) + "px");
+    const win = rows[wi];
     rows.forEach((row, i) => {
-      if(i === 0) return;
       row.style.setProperty("--cx", "-50%");
       row.style.setProperty("--x", "0px");
       row.style.setProperty("--y", (REST_GAP + i * REST_ROW) + "px");
     });
+    win.style.setProperty("--y", (-(tok.offsetHeight - 2)) + "px");
     /* the lines go when the words they point at go, or the moment between
        the field fading and the row settling is a spray of naked lines */
     if(w) w.classList.remove("in");
@@ -439,7 +449,7 @@ async function writeReply(bot, G, my, at){
     /* the share it was taken at, rising away: a few of them are in the air
        at once, so the line reads as a run of decisions rather than one */
     const lift = el("span", "lift");
-    lift.textContent = share(step.cands[0].p);
+    lift.textContent = share(took.p);
     tok.appendChild(lift);
     requestAnimationFrame(() => lift.classList.add("go"));
     setTimeout(() => lift.remove(), 2700);
@@ -450,9 +460,9 @@ async function writeReply(bot, G, my, at){
     await pause(40);
     fan.classList.remove("in", "out");
     fan.classList.add("rest");
-    rows.forEach((c, i) => { if(i && i < 4) c.classList.add("keep"); });
+    rows.forEach((c, i) => { if(i !== wi && i < 4) c.classList.add("keep"); });
     win.style.setProperty("--x", "0px");
-    win.style.setProperty("--y", REST_GAP + "px");
+    win.style.setProperty("--y", (REST_GAP + wi * REST_ROW) + "px");
   }
   caret.remove();
   p.classList.add("done");
@@ -592,10 +602,14 @@ function inspector(p){
     return f ? f.getBoundingClientRect() : null;
   };
   const hover = (x, y) => {
-    if(pinned >= 0) return;
     const r = inPanel();
     if(r && x >= r.left - 6 && x <= r.right + 6 && y >= r.top - 4 && y <= r.bottom + 6) return;
-    apply(hit(x, y));
+    /* Holding a word open does not freeze the paragraph: the pointer goes on
+       working, and off every other word it falls back to the one being held.
+       Only one is ever open, so a second click moves the hold rather than
+       adding to it. */
+    const i = hit(x, y);
+    apply(i < 0 ? pinned : i);
   };
   const pin = (x, y) => {
     const i = hit(x, y);
@@ -606,7 +620,7 @@ function inspector(p){
   p.addEventListener("pointermove", e => {
     if(e.pointerType !== "touch") hover(e.clientX, e.clientY);
   });
-  p.addEventListener("pointerleave", () => { if(pinned < 0) apply(-1); });
+  p.addEventListener("pointerleave", () => apply(pinned));
   p.addEventListener("click", e => pin(e.clientX, e.clientY));
 
   /* On a finger there is no hover, so the drag IS the gesture: the bulge
