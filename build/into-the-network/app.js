@@ -122,7 +122,7 @@ function gate(t, text, quiet){
     no.textContent = "Not now";
     row.append(go, no);
     t.appendChild(g); scroll();
-    go.onclick = () => { g.remove(); okToLoad = true; resolve(true); };
+    go.onclick = () => { g.remove(); okToLoad = true; setGate(); resolve(true); };
     no.onclick = () => {
       g.remove();
       /* in the sheet the list comes straight back, which says it better than
@@ -142,7 +142,7 @@ async function provider(onPct){
     const m = await import("./live.js");
     const ok = await m.load();
     if(!ok) throw new Error((window.LIVE && window.LIVE.error) || "the model would not load");
-    LIVE = m; return m;
+    LIVE = m; setGate(); return m;
   })();
   return loading;
 }
@@ -914,6 +914,7 @@ function chips(){
     li.appendChild(b); $("chips").appendChild(li);
   });
   $("ownsize").textContent = MB + " MB";
+  setGate();
   $("own").onclick = () => {
     if(okToLoad){ closeSheet(); $("msg").focus(); return; }
     offer();
@@ -930,7 +931,6 @@ async function offer(){
   keep.forEach(c => { c.style.display = ""; });
   if(yes){
     closeSheet();
-    $("msg").placeholder = "Ask anything. The model loads when you send.";
     $("msg").focus();
   }
 }
@@ -941,6 +941,24 @@ function submit(){
   closeSheet(); $("msg").blur();
   ask(v);
 }
+/* Until the model is here there is nothing to type into: the five recorded
+   questions are the only things the page can answer, and a box that raises a
+   keyboard and shoves the whole screen up to let somebody write a question it
+   will then refuse is a box that lied. Read-only keeps the keyboard down on a
+   phone and the caret away on a desktop, while the box still takes focus, so
+   reaching for it still opens the list and the keyboard arrives at the moment
+   typing starts meaning something. */
+function setGate(){
+  const shut = !okToLoad && !LIVE;
+  const m = $("msg");
+  m.readOnly = shut;
+  /* short enough to survive a phone: the sheet opening above it says what
+     adding the model costs, which is the half that needs the room */
+  m.placeholder = shut ? "Pick a question, or add the model"
+                       : "Ask anything. The model loads when you send.";
+  bar.classList.toggle("gated", shut);
+}
+
 /* The sheet is shown when somebody reaches for the box, not before. A press
    inside it has to survive the blur that the press itself causes, so a
    pointer going down on the sheet holds it open until the click lands. */

@@ -359,6 +359,10 @@ footer{flex:0 0 auto;padding:6px 20px 20px;background:var(--page)}
 #msg{flex:1;min-width:0;background:none;border:0;color:var(--ink);font:inherit;
   font-size:15px;line-height:21px;padding:7px 0}
 #msg:focus{outline:none}
+/* a box that cannot be typed into yet says so by behaving like what it is,
+   which is the handle on the list above it */
+.bar.gated #msg{cursor:pointer;caret-color:transparent;color:var(--dim)}
+.bar.gated #msg::placeholder{color:var(--dim)}
 #msg::placeholder{color:var(--dimmer)}
 /* The input is taller than the button, so the composer's own 8px of padding
    leaves more room above and below the arrow than beside it. The difference
