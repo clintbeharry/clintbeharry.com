@@ -662,9 +662,13 @@ function inspector(p){
     const f = toks[at].querySelector(".fan");
     return f ? f.getBoundingClientRect() : null;
   };
-  const hover = (x, y) => {
+  const onPanel = (x, y) => {
     const r = inPanel();
-    if(r && x >= r.left - 6 && x <= r.right + 6 && y >= r.top - 4 && y <= r.bottom + 6) return;
+    return !!r && x >= r.left - 6 && x <= r.right + 6
+               && y >= r.top - 4 && y <= r.bottom + 6;
+  };
+  const hover = (x, y) => {
+    if(onPanel(x, y)) return;
     /* Holding a word open does not freeze the paragraph: the pointer goes on
        working, and off every other word it falls back to the one being held.
        Only one is ever open, so a second click moves the hold rather than
@@ -687,12 +691,18 @@ function inspector(p){
   /* On a finger there is no hover, so the drag IS the gesture: the bulge
      tracks the finger, and where it is lifted is where it stays. */
   let slid = false;
+  /* A finger landing in the open panel is reaching for a row in it, not for
+     whatever word the panel happens to be lying on top of. Without this the
+     touch picked the word behind, the panel moved out from under the finger,
+     and the tap arrived nowhere: on a phone the panel was unusable. */
   p.addEventListener("touchstart", e => {
     const t = e.touches[0]; if(!t) return;
+    if(onPanel(t.clientX, t.clientY)) return;
     slid = false; pinned = -1; measure(); apply(hit(t.clientX, t.clientY));
   }, { passive:true });
   p.addEventListener("touchmove", e => {
     const t = e.touches[0]; if(!t) return;
+    if(onPanel(t.clientX, t.clientY)) return;
     slid = true; apply(hit(t.clientX, t.clientY));
   }, { passive:true });
   p.addEventListener("touchend", () => { pinned = at; }, { passive:true });

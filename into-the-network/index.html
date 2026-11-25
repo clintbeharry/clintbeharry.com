@@ -378,6 +378,9 @@ footer{flex:0 0 auto;padding:6px 20px 20px;background:var(--page)}
 button:focus-visible,input:focus-visible{outline:2px solid var(--clay);outline-offset:2px}
 @media (max-width:700px){
   #thread{padding:20px 14px 6px} footer{padding:6px 14px 16px}
+  /* a row is a target for a finger here, not just something to read */
+  .reply.done.inspect .tok.at .fan i{line-height:22px}
+  .reply.done.inspect .tok.at .fan{gap:5px;padding:9px 12px}
   .said,.q{max-width:88%}
   /* upright, because that is the shape of the space a phone has */
   .stage{aspect-ratio:3/4}
@@ -749,7 +752,15 @@ function buildCloud(){
   const POOL=Math.round(lerp(15,48,DENSE)), KIDS=Math.round(lerp(5,13,DENSE));
   recs=[];
   G.q.forEach((d,i)=>recs.push({w:d.w,role:0,parent:i,xy:null,rel:1,h3:hash3(d.w)}));
-  G.q.forEach((d,i)=>d.assoc.slice(0,KIDS).forEach((a,k)=>
+  /* A recorded neighbourhood is one word per direction, listed in order
+     around the circle, so taking the first few takes an ARC rather than a
+     sample. On a narrow screen, where fewer of them fit, every neighbour was
+     coming out of the same lower quadrant: the word had a tail hanging off it
+     instead of a neighbourhood around it. Taken evenly instead, so whatever
+     number fits still arrives from all the way round. */
+  const around=(a,n)=>a.length<=n?a
+    :Array.from({length:n},(_,i)=>a[Math.round(i*a.length/n)%a.length]);
+  G.q.forEach((d,i)=>around(d.assoc,KIDS).forEach((a,k)=>
     recs.push({w:a.w,role:1,parent:i,k,xy:a.xy,rel:rel1(a.xy),h3:hash3(a.w)})));
   const best=new Map();
   G.reply.forEach(r=>r.cands.forEach(cd=>{const k=(cd.w||"").trim();
@@ -1883,9 +1894,13 @@ function inspector(p){
     const f = toks[at].querySelector(".fan");
     return f ? f.getBoundingClientRect() : null;
   };
-  const hover = (x, y) => {
+  const onPanel = (x, y) => {
     const r = inPanel();
-    if(r && x >= r.left - 6 && x <= r.right + 6 && y >= r.top - 4 && y <= r.bottom + 6) return;
+    return !!r && x >= r.left - 6 && x <= r.right + 6
+               && y >= r.top - 4 && y <= r.bottom + 6;
+  };
+  const hover = (x, y) => {
+    if(onPanel(x, y)) return;
     /* Holding a word open does not freeze the paragraph: the pointer goes on
        working, and off every other word it falls back to the one being held.
        Only one is ever open, so a second click moves the hold rather than
@@ -1908,12 +1923,18 @@ function inspector(p){
   /* On a finger there is no hover, so the drag IS the gesture: the bulge
      tracks the finger, and where it is lifted is where it stays. */
   let slid = false;
+  /* A finger landing in the open panel is reaching for a row in it, not for
+     whatever word the panel happens to be lying on top of. Without this the
+     touch picked the word behind, the panel moved out from under the finger,
+     and the tap arrived nowhere: on a phone the panel was unusable. */
   p.addEventListener("touchstart", e => {
     const t = e.touches[0]; if(!t) return;
+    if(onPanel(t.clientX, t.clientY)) return;
     slid = false; pinned = -1; measure(); apply(hit(t.clientX, t.clientY));
   }, { passive:true });
   p.addEventListener("touchmove", e => {
     const t = e.touches[0]; if(!t) return;
+    if(onPanel(t.clientX, t.clientY)) return;
     slid = true; apply(hit(t.clientX, t.clientY));
   }, { passive:true });
   p.addEventListener("touchend", () => { pinned = at; }, { passive:true });

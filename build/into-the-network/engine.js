@@ -314,7 +314,15 @@ function buildCloud(){
   const POOL=Math.round(lerp(15,48,DENSE)), KIDS=Math.round(lerp(5,13,DENSE));
   recs=[];
   G.q.forEach((d,i)=>recs.push({w:d.w,role:0,parent:i,xy:null,rel:1,h3:hash3(d.w)}));
-  G.q.forEach((d,i)=>d.assoc.slice(0,KIDS).forEach((a,k)=>
+  /* A recorded neighbourhood is one word per direction, listed in order
+     around the circle, so taking the first few takes an ARC rather than a
+     sample. On a narrow screen, where fewer of them fit, every neighbour was
+     coming out of the same lower quadrant: the word had a tail hanging off it
+     instead of a neighbourhood around it. Taken evenly instead, so whatever
+     number fits still arrives from all the way round. */
+  const around=(a,n)=>a.length<=n?a
+    :Array.from({length:n},(_,i)=>a[Math.round(i*a.length/n)%a.length]);
+  G.q.forEach((d,i)=>around(d.assoc,KIDS).forEach((a,k)=>
     recs.push({w:a.w,role:1,parent:i,k,xy:a.xy,rel:rel1(a.xy),h3:hash3(a.w)})));
   const best=new Map();
   G.reply.forEach(r=>r.cands.forEach(cd=>{const k=(cd.w||"").trim();
