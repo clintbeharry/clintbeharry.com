@@ -38,11 +38,18 @@ real reply, so the influence shown is causal rather than correlational.
 
 **[clintbeharry.com/into-the-network/](https://clintbeharry.com/into-the-network/)**
 
-A five-step sequence taking a question all the way through: the words arrive
+A six-step sequence taking a question all the way through: the words arrive
 and are located in the embedding space, each reaches into its own
-neighbourhood, the network wires itself and is re-projected, it compresses into
-a blinking cursor, and the reply writes itself into the thread with every word
-still carrying the field it came from.
+neighbourhood, the cloud is re-read along four sets of principal components,
+the model's real attention weights show what each of thirty-two layers is
+looking at, it compresses into a blinking cursor, and the reply writes itself
+into the thread with every word still carrying the field it came from.
+
+The attention step is the one that measures the mechanism rather than the
+result, and it does not show what people expect. Most of the mass in the later
+layers lands on the very first token and on the line breaks of a chat template
+nobody sees. That is the attention sink, and only in the middle of the stack
+does the question itself get read.
 
 The finished answer stays explorable. Dragging along it swells the words back
 open around your finger, restoring the alternatives and their percentages.
@@ -81,6 +88,7 @@ are devices for legibility and are named as such on the page.
 ```
 python build/capture-seeds.py    --model <a local SmolLM2 export> "Your question?"
 python build/capture-axes.py     --model <a local SmolLM2 export>
+python build/capture-attn.py     --model <a local SmolLM2 export>
 python build/capture-branches.py --model <a local SmolLM2 export>
 python build/build-into-the-network.py
 ```
@@ -91,7 +99,10 @@ downloaded. It pulls the embedding matrix straight out of the ONNX graph as an
 initializer, so no PyTorch checkpoint is needed either.
 `capture-axes.py` decomposes the whole cloud once and writes each word's
 position on principal components 1 through 12, which is what step three's four
-views read. `capture-branches.py` forces each of the likeliest words the model
+views read. `capture-attn.py` gets at the attention weights, which this export
+fuses into one op per layer: the op takes its post-rotary Q as a named tensor
+and hands its K back with the KV cache, so adding the Q tensors as graph
+outputs leaves only a matmul and a softmax to do by hand. `capture-branches.py` forces each of the likeliest words the model
 did not use into its place and lets the model carry on, which is what makes the
 finished answer forkable without a download.
 `build-into-the-network.py` inlines the sources into the published page.

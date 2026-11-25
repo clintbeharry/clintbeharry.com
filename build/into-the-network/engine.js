@@ -484,7 +484,7 @@ async function play(data){
   await sleep(760); if(me!==run) return;
 
   /* ---------- 1 · the words come across ---------- */
-  $("step").textContent="1 / 5";
+  $("step").textContent="1 / 6";
   hud("tokenizing the prompt");
   const sr=stageEl.getBoundingClientRect();
   words.forEach((n,i)=>{
@@ -504,7 +504,7 @@ async function play(data){
   marks.forEach(b=>b.classList.add("sent"));
 
   /* ---------- 2 · each word inside its neighbourhood ---------- */
-  $("step").textContent="2 / 5";
+  $("step").textContent="2 / 6";
   hud("looking up each token's embedding");
   /* The whole neighbourhood, not the ten closest. This was the second cap on
      the same thing: the recorded set was being thinned to fit a narrow screen
@@ -598,7 +598,7 @@ async function play(data){
   recs.forEach(r=>{ if(r.e2) r.e2.op=0; });
 
   /* ---------- 3 · the same space, along different axes ---------- */
-  $("step").textContent="3 / 5";
+  $("step").textContent="3 / 6";
   /* What the pass is doing, in the fewest words that are still true. */
   /* These are not four pictures of the same thing. Each reads a different
      slice of the space the words are held in, and what falls near what
@@ -715,8 +715,95 @@ async function play(data){
     if(me!==run) return;
   }
 
-  /* ---------- 4 · compressed into the cursor ---------- */
-  $("step").textContent="4 / 5";
+  /* ---------- 4 · what the thirty-two layers are looking at ----------
+     The one beat here that is a measurement of the mechanism rather than of
+     the result. The attention in this export is fused into a single op per
+     layer, so there is no softmax tensor to read, but the op takes its
+     post-rotary Q as a named tensor and hands its K back as part of the KV
+     cache. capture-attn.py adds the Q tensors as graph outputs and does the
+     matmul and the softmax itself, so these are the model's real attention
+     weights and not a stand-in for them.
+
+     They are also not what anybody expects, which is why they are worth
+     showing. Most of the mass in the later layers lands on the very first
+     token and on the line breaks of the chat template nobody sees. That is
+     the attention sink: a head with nothing to contribute still has to put
+     its softmax somewhere. Only in the middle of the stack does the question
+     itself get read. A tidy heatmap over the content words would have been a
+     story rather than a measurement. */
+  if(G.attn&&G.attn.at&&G.attn.at.length){
+    $("step").textContent="4 / 6";
+    const A=G.attn, T=A.toks.length;
+    const keepN=NODES.slice(), keepE=EDGES.slice();
+    const cam0=[CAMR,CAMA,CAMB,CAMY], look0=LOOK.clone(), box0=BOXR;
+    NODES.length=0; EDGES.length=0; BOXR=[1e9,1e9,1e9];
+    setAcc(CLAY,CLAYC);
+
+    const show=t=>t==="\n"?"\u23ce":t;
+    /* the prompt as the model receives it, in reading order, wrapped the way
+       it has to be to fit: the scaffolding included, because half of what
+       follows lands on it */
+    const PER=Math.max(6,Math.min(T,Math.round(Math.sqrt(T*(VW/VH)*2.4))));
+    const ROWS=Math.ceil(T/PER);
+    const SPX=Math.min(2*RX*.94/PER,112), SPY=Math.min(54,RY*.5/Math.max(1,ROWS-1)+30);
+    const TOPY=(ROWS-1)*SPY*.5+RY*.22;
+    const tn=A.toks.map((t,i)=>{
+      const r=Math.floor(i/PER), c=i%PER, wide=Math.min(PER,T-r*PER);
+      const n=mkNode(show(t),(c-(wide-1)/2)*SPX,TOPY-r*SPY,0,0);
+      n.size=.80; n.dr=0; n.am=0;
+      /* the question's own tokens in ink, the template in mono, so where
+         your words sit inside the scaffolding is visible at a glance */
+      n.mono=!(i>=A.ask[0]&&i<A.ask[1]);
+      return n;
+    });
+    /* the position the next word is about to come from: every layer reads
+       back to here, and only backwards, which is the whole of causality */
+    const BOT=TOPY-(ROWS-1)*SPY-Math.max(64,RY*.34);
+    const now=mkNode("\u2502",0,BOT,0,0);
+    now.size=1.15; now.dr=0; now.am=0; now.fixed=1; now.warm=1; now.mono=1;
+    const beams=tn.map(n=>mkEdge(now,n,GREY,0,.3));
+
+    /* framed on what is actually there, top label to convergence, rather
+       than on the box that is not being drawn */
+    CAMA=0; CAMB=0; CAMY=(TOPY+BOT)/2;
+    LOOK=V3(0,CAMY,0);
+    CAMR=fitCam((PER-1)*SPX*.5+96,(TOPY-BOT)/2+30,1.07,0);
+    const NAME=L=>{
+      const top=L.a.map((v,i)=>[v,i]).sort((x,y)=>y[0]-x[0]).slice(0,3);
+      return "layer "+(L.l+1)+" of 32 looks at "
+        +top.map(([v,i])=>show(A.toks[i]).trim()+" "+(v*100).toFixed(0)+"%").join(", ");
+    };
+    const IN=640, HOLD=1250;
+    for(let k=0;k<A.at.length;k++){
+      const L=A.at[k], pv=k?A.at[k-1]:null, mx=Math.max.apply(null,L.a);
+      hud(NAME(L));
+      await clock(IN+HOLD+(k?0:260),(_,t)=>{
+        const f=io(seg(t,0,IN)), on=io(seg(t,0,340));
+        tn.forEach((n,i)=>{
+          const g=Math.sqrt(lerp(pv?pv.a[i]:0,L.a[i],f)/mx);
+          n.op=on*(.20+g*.80); n.warm=g*g; n.size=.76+g*.44;
+        });
+        beams.forEach((e,i)=>{
+          const g=Math.sqrt(lerp(pv?pv.a[i]:0,L.a[i],f)/mx);
+          e.op=on*(.06+g*.88); e.w=.20+g*1.55;
+          e.col.setHex(g>.52?CLAY:GREY);
+        });
+        now.op=on;
+      });
+      if(me!==run) return;
+    }
+    const was=NODES.map(n=>n.op), wase=EDGES.map(e=>e.op);
+    await clock(400,(_,t)=>{ const f=1-seg(t,0,400);
+      NODES.forEach((n,i)=>n.op=was[i]*f);
+      EDGES.forEach((e,i)=>e.op=wase[i]*f); });
+    if(me!==run) return;
+    NODES.length=0; EDGES.length=0; BOXR=box0;
+    keepN.forEach(n=>NODES.push(n)); keepE.forEach(e=>EDGES.push(e));
+    CAMR=cam0[0]; CAMA=cam0[1]; CAMB=cam0[2]; CAMY=cam0[3]; LOOK=look0;
+  }
+
+  /* ---------- 5 · compressed into the cursor ---------- */
+  $("step").textContent="5 / 6";
   hud("32 layers, one forward pass");
   const R4=nodes.concat(cube);   /* the frame folds away with its contents */
   const xs=R4.map(n=>n.h.x), lo=Math.min.apply(null,xs), hi=Math.max.apply(null,xs);
